@@ -84,14 +84,7 @@ fun AlarmEditorScreen(
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).systemBarsPadding()) {
         Column(Modifier.fillMaxSize()) {
             Spacer(Modifier.height(24.dp))
-            Box(Modifier.fillMaxWidth()) {
-                TimeWheels(a.hour, a.minute, is24) { h, m -> a = a.copy(hour = h, minute = m) }
-                if (!isNew) {
-                    IconButton(onClick = onDelete, modifier = Modifier.align(Alignment.TopEnd).padding(end = 8.dp)) {
-                        Icon(Icons.Outlined.Delete, "Delete alarm", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
+            TimeWheels(a.hour, a.minute, is24) { h, m -> a = a.copy(hour = h, minute = m) }
             Spacer(Modifier.height(16.dp))
 
             Surface(
@@ -101,7 +94,7 @@ fun AlarmEditorScreen(
             ) {
                 Column(
                     Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)
-                        .padding(top = 24.dp, bottom = if (isNew) 120.dp else 180.dp)
+                        .padding(top = 24.dp, bottom = 120.dp)
                 ) {
                     Text(dateText, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(20.dp))
@@ -167,23 +160,22 @@ fun AlarmEditorScreen(
             }
         }
 
-        Column(
+        Row(
             Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (!isNew) {
-                // Narrower than the Cancel | Save pill below it.
                 Surface(
                     onClick = onDelete,
-                    modifier = Modifier.width(150.dp),
+                    modifier = Modifier.size(48.dp),
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.errorContainer,
                 ) {
-                    Box(Modifier.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
-                        Text("Delete", color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold)
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Outlined.Delete, "Delete alarm", tint = MaterialTheme.colorScheme.onErrorContainer)
                     }
                 }
-                Spacer(Modifier.height(10.dp))
             }
             Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -13,7 +13,7 @@ Alarms, Stopwatch, Timer (bottom bar, three items). Settings is the gear in the 
   The system Back gesture (or the tick) leaves edit mode. Reordering is saved the moment you drop a card.
   Pinned alarms stay above unpinned ones; use Pin to move an alarm between the two groups.
 - A small accent-coloured tab on the left edge of a card means that alarm is on.
-- The alarm editor has a trash icon top right and a Delete pill above the Cancel | Save pill.
+- In the alarm editor, Delete is a red circle to the left of the Cancel | Save pill. In edit mode, tapping a card does nothing.
 
 ## Behaviour notes
 - Each alarm has two pending intents: REGULAR (scheduled time) and AGAIN (snooze / auto-repeat re-ring).
@@ -24,6 +24,9 @@ Alarms, Stopwatch, Timer (bottom bar, three items). Settings is the gear in the 
 - The alarm widget's + opens the normal new-alarm editor. There is no separate quick-alarm feature any more.
 
 ## Lock-screen ringing
+Turn off and Silence are swipes: drag the circle any direction, a bigger circle fills in as you pull, let go past the
+threshold to fire. Snooze stays a tap. The notification also has plain buttons as a fallback.
+
 The ringing screen opens through a full-screen notification, plus a screen wake lock and a direct launch attempt.
 On Android 14+ the "full-screen notifications" permission must be on. The app asks for it on launch, and
 Settings > Reliability checklist has the same shortcut.

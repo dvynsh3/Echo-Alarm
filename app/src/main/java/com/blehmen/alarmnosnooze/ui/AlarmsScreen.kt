@@ -220,7 +220,7 @@ fun AlarmsScreen(
                             )
                         },
                         onToggle = { onToggle(alarm, it) },
-                        onClick = { onOpen(alarm) },
+                        onClick = { if (!editMode) onOpen(alarm) },
                         onLongClick = {
                             if (!editMode) { haptic.performHapticFeedback(HapticFeedbackType.LongPress); editMode = true }
                         },
