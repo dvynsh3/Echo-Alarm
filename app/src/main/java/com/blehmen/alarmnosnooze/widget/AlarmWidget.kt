@@ -86,7 +86,7 @@ private fun AlarmWidgetContent(alarms: List<Alarm>, accent: Color, is24: Boolean
                 }
             }
             Box(
-                GlanceModifier.size(44.dp).background(cp(accent)).cornerRadius(22.dp).clickable(openApp(ctx, 0, quick = true)),
+                GlanceModifier.size(44.dp).background(cp(accent)).cornerRadius(22.dp).clickable(openApp(ctx, 0, newAlarm = true)),
                 contentAlignment = Alignment.Center,
             ) {
                 Text("+", style = TextStyle(color = cp(onColorFor(accent)), fontSize = 26.sp, fontWeight = FontWeight.Bold))
@@ -95,7 +95,7 @@ private fun AlarmWidgetContent(alarms: List<Alarm>, accent: Color, is24: Boolean
         Spacer(GlanceModifier.height(8.dp))
         Box(GlanceModifier.defaultWeight().fillMaxWidth()) {
             if (alarms.isEmpty()) {
-                Text("No alarms yet. Tap + to set a quick one.", style = TextStyle(color = cp(WidgetMuted), fontSize = 13.sp))
+                Text("No alarms yet. Tap + to add one.", style = TextStyle(color = cp(WidgetMuted), fontSize = 13.sp))
             } else {
                 LazyColumn(GlanceModifier.fillMaxSize()) {
                     items(alarms, itemId = { it.id.toLong() }) { a ->

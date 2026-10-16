@@ -57,8 +57,6 @@
         <receiver android:name=".engine.AlarmReceiver" android:exported="false" />
         <receiver android:name=".engine.TimerReceiver" android:exported="false" />
 
-        <receiver android:name=".engine.ReminderReceiver" android:exported="false" />
-
         <receiver android:name=".engine.BootReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

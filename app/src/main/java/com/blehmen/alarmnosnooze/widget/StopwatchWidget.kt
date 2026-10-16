@@ -55,7 +55,7 @@ private fun StopwatchWidgetContent(s: StopwatchState, accent: Color) {
     ) {
         Text(
             if (s.laps.isEmpty()) "Stopwatch" else "Stopwatch · ${s.laps.size} laps",
-            modifier = GlanceModifier.clickable(openApp(ctx, 2)),
+            modifier = GlanceModifier.clickable(openApp(ctx, 1)),
             style = TextStyle(color = cp(WidgetMuted), fontSize = 12.sp),
         )
         if (s.running) {

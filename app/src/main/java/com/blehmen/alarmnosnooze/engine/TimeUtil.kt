@@ -1,8 +1,6 @@
 package com.blehmen.alarmnosnooze.engine
 
 import com.blehmen.alarmnosnooze.data.Alarm
-import com.blehmen.alarmnosnooze.data.Reminder
-import java.time.LocalDate
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -32,12 +30,6 @@ fun timeParts(h: Int, m: Int, is24: Boolean): Pair<String, String> =
     if (is24) "%02d:%02d".format(h, m) to ""
     else "${(h + 11) % 12 + 1}:${"%02d".format(m)}" to (if (h < 12) "am" else "pm")
 
-/** Effective fire time of a reminder (uses the default time when none was set). */
-fun reminderTriggerAt(r: Reminder, defaultMinutes: Int): Long {
-    val h = if (r.hasTime) r.hour else defaultMinutes / 60
-    val m = if (r.hasTime) r.minute else defaultMinutes % 60
-    return LocalDate.ofEpochDay(r.epochDay).atTime(h, m).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-}
 
 /** Countdown text, rounding up so it never shows 00:00 while time remains. */
 fun fmtTimer(ms: Long): String {

@@ -84,7 +84,7 @@ fun TimeWheels(hour: Int, minute: Int, is24: Boolean, onChange: (Int, Int) -> Un
             WheelPicker(hours, h12 - 1, true, { idx -> onChange(((idx + 1) % 12) + if (pm) 12 else 0, minute) }, Modifier.width(110.dp))
         }
         Text(":", fontSize = 48.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp),
-            color = MaterialTheme.colorScheme.onBackground)
+            color = MaterialTheme.colorScheme.primary)
         WheelPicker(mins, minute, true, { onChange(hour, it) }, Modifier.width(110.dp))
         if (!is24) {
             Spacer(Modifier.width(16.dp))

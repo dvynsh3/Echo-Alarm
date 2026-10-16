@@ -19,6 +19,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.provider.Settings
 import androidx.core.app.ServiceCompat
+import com.blehmen.alarmnosnooze.RingingActivity
 import com.blehmen.alarmnosnooze.app
 import com.blehmen.alarmnosnooze.data.Alarm
 import com.blehmen.alarmnosnooze.engine.AlarmEngine
@@ -59,6 +60,7 @@ class AlarmService : Service() {
     private var rampJob: Job? = null
     private var timeoutJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var screenLock: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -107,6 +109,18 @@ class AlarmService : Service() {
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "alarmnosnooze:ring")
                 .apply { acquire(RING_TIMEOUT_MS + 60_000L) }
         }
+        wakeScreen()
+    }
+
+    /** Turns the display on even if the full-screen notification is suppressed. Releases itself after 15 s. */
+    @Suppress("DEPRECATION")
+    private fun wakeScreen() {
+        screenLock = getSystemService(PowerManager::class.java)
+            .newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
+                "alarmnosnooze:screen"
+            )
+            .apply { acquire(15_000L) }
     }
 
     private suspend fun ring(id: Int, kind: Int) {
@@ -122,6 +136,13 @@ class AlarmService : Service() {
         _state.value = a
         startPlayback(a)
         getSystemService(NotificationManager::class.java).notify(Notifier.RING_ID, Notifier.ringing(this, a))
+        // Belt and braces: where Android allows it this opens the ringing screen directly.
+        try {
+            startActivity(
+                Intent(this, RingingActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            )
+        } catch (_: Exception) { /* blocked; the full-screen notification handles it */ }
 
         timeoutJob?.cancel()
         timeoutJob = scope.launch {
@@ -200,6 +221,8 @@ class AlarmService : Service() {
         _state.value = null
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
+        screenLock?.let { if (it.isHeld) it.release() }
+        screenLock = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }

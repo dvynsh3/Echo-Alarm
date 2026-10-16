@@ -9,7 +9,7 @@ object Backup {
     private const val FORMAT = "alarmnosnooze-backup"
     private const val VERSION = 1
 
-    data class RestoreResult(val alarms: Int, val reminders: Int)
+    data class RestoreResult(val alarms: Int)
 
     suspend fun export(app: AlarmApp): String {
         val s = app.settings.current()
@@ -22,7 +22,6 @@ object Backup {
             put("accent", s.accent)
             put("maxRepeats", s.maxRepeats)
             put("resumeAfterReboot", s.resumeAfterReboot)
-            put("reminderDefaultMinutes", s.reminderDefaultMinutes)
             s.defaultSoundUri?.let { put("defaultSoundUri", it) }
             put("defaultVolume", s.defaultVolume)
             put("defaultRampEnabled", s.defaultRampEnabled)
@@ -47,14 +46,6 @@ object Backup {
         }
         root.put("alarms", alarms)
 
-        val reminders = JSONArray()
-        for (r in app.db.reminderDao().getAll()) {
-            reminders.put(JSONObject().apply {
-                put("title", r.title); put("epochDay", r.epochDay); put("hasTime", r.hasTime)
-                put("hour", r.hour); put("minute", r.minute); put("done", r.state == 2)
-            })
-        }
-        root.put("reminders", reminders)
         return root.toString(2)
     }
 
@@ -90,32 +81,18 @@ object Backup {
             }
         } ?: emptyList()
 
-        val reminders = root.optJSONArray("reminders")?.let { arr ->
-            (0 until arr.length()).map { i ->
-                val o = arr.getJSONObject(i)
-                Reminder(
-                    title = o.optString("title", "Reminder").take(80),
-                    epochDay = o.getLong("epochDay"),
-                    hasTime = o.optBoolean("hasTime", false),
-                    hour = o.optInt("hour", 9).coerceIn(0, 23),
-                    minute = o.optInt("minute", 0).coerceIn(0, 59),
-                    state = if (o.optBoolean("done", false)) 2 else 0,
-                )
-            }
-        } ?: emptyList()
 
         val presets = root.optJSONArray("timerPresets")?.let { arr ->
             (0 until arr.length()).map { arr.getInt(it) }.filter { it in 1..86399 }
         }
 
-        // Apply: settings first (reminder times depend on them), then data.
+        // Apply: settings first, then data.
         root.optJSONObject("settings")?.let { st ->
             val repo = app.settings
             if (st.has("themeMode")) repo.setTheme(st.getInt("themeMode").coerceIn(0, 2))
             if (st.has("accent")) repo.setAccent(st.getInt("accent"))
             if (st.has("maxRepeats")) repo.setMaxRepeats(st.getInt("maxRepeats").coerceAtLeast(1))
             if (st.has("resumeAfterReboot")) repo.setResume(st.getBoolean("resumeAfterReboot"))
-            if (st.has("reminderDefaultMinutes")) repo.setReminderTime(st.getInt("reminderDefaultMinutes").coerceIn(0, 1439))
             repo.setDefaultSound(st.optString("defaultSoundUri", "").ifEmpty { null })
             if (st.has("defaultVolume")) repo.setDefaultVolume(st.getInt("defaultVolume").coerceIn(5, 100))
             if (st.has("defaultRampEnabled")) repo.setDefaultRamp(st.getBoolean("defaultRampEnabled"))
@@ -124,7 +101,6 @@ object Backup {
         if (!presets.isNullOrEmpty()) app.timerRepo.setPresets(presets)
 
         app.engine.replaceAll(alarms)
-        app.reminders.replaceAll(reminders)
-        return RestoreResult(alarms.size, reminders.size)
+        return RestoreResult(alarms.size)
     }
 }

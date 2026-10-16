@@ -1,12 +1,15 @@
 package com.blehmen.alarmnosnooze
 
 import android.Manifest
+import android.app.NotificationManager
 import android.app.PictureInPictureParams
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -14,13 +17,23 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.HourglassBottom
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.*
@@ -31,19 +44,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.blehmen.alarmnosnooze.data.Alarm
 import com.blehmen.alarmnosnooze.data.Phase
-import com.blehmen.alarmnosnooze.data.Reminder
 import com.blehmen.alarmnosnooze.ui.*
 
 class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_TAB = "tab"
-        const val EXTRA_QUICK = "quick"
-        const val TAB_STOPWATCH = 2
-        const val TAB_TIMER = 3
+        const val EXTRA_NEW_ALARM = "new_alarm"
+        const val TAB_ALARMS = 0
+        const val TAB_STOPWATCH = 1
+        const val TAB_TIMER = 2
     }
 
     private val vm: MainViewModel by viewModels()
@@ -82,7 +95,7 @@ class MainActivity : ComponentActivity() {
     private fun handleTabIntent(i: Intent?) {
         val t = i?.getIntExtra(EXTRA_TAB, -1) ?: -1
         if (t >= 0) vm.tab = t
-        if (i?.getBooleanExtra(EXTRA_QUICK, false) == true) { vm.tab = 0; vm.quickRequest = true }
+        if (i?.getBooleanExtra(EXTRA_NEW_ALARM, false) == true) { vm.tab = TAB_ALARMS; vm.newAlarmRequest = true }
     }
 
     private fun enterPip() {
@@ -103,107 +116,155 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private const val SCREEN_MAIN = 0
-private const val SCREEN_EDITOR = 1
-private const val SCREEN_SETTINGS = 2
-private const val SCREEN_REMINDER_EDITOR = 3
+private sealed interface Screen {
+    data object Main : Screen
+    data class Editor(val id: Int) : Screen
+    data object Settings : Screen
+}
+
+private const val KIND_MAIN = 0
+private const val KIND_EDITOR = 1
+private const val KIND_SETTINGS = 2
 
 @Composable
 fun AppRoot(vm: MainViewModel, onEnterPip: () -> Unit) {
     val settings by vm.settings.collectAsState()
     val alarms by vm.alarms.collectAsState()
-    val reminders by vm.reminders.collectAsState()
     val timer by vm.timer.collectAsState()
     val stopwatch by vm.stopwatch.collectAsState()
 
     AppTheme(settings.themeMode, settings.accent) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            var screen by rememberSaveable { mutableStateOf(SCREEN_MAIN) }
+            var kind by rememberSaveable { mutableStateOf(KIND_MAIN) }
             var editId by rememberSaveable { mutableStateOf(-1) }
-            var reminderId by rememberSaveable { mutableStateOf(-1) }
-            BackHandler(enabled = screen != SCREEN_MAIN) { screen = SCREEN_MAIN }
+            val target: Screen = when (kind) {
+                KIND_EDITOR -> Screen.Editor(editId)
+                KIND_SETTINGS -> Screen.Settings
+                else -> Screen.Main
+            }
+            BackHandler(enabled = target != Screen.Main) { kind = KIND_MAIN }
 
-            when (screen) {
-                SCREEN_EDITOR -> {
-                    val alarm by produceState<Alarm?>(null, editId) {
-                        value = if (editId == -1) vm.blank() else vm.load(editId)
+            // The alarm widget's + button asks for the normal new-alarm editor.
+            LaunchedEffect(vm.newAlarmRequest) {
+                if (vm.newAlarmRequest) {
+                    vm.newAlarmRequest = false
+                    editId = -1
+                    kind = KIND_EDITOR
+                }
+            }
+
+            // Alarm editor and Settings slide in from the right and slide back out the same way on exit.
+            AnimatedContent(
+                targetState = target,
+                transitionSpec = {
+                    val deeper = targetState != Screen.Main
+                    val enter: EnterTransition
+                    val exit: ExitTransition
+                    if (deeper) {
+                        enter = slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(200))
+                        exit = slideOutHorizontally(tween(320, easing = FastOutSlowInEasing)) { -it / 4 } + fadeOut(tween(320))
+                    } else {
+                        enter = slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { -it / 4 } + fadeIn(tween(320))
+                        exit = slideOutHorizontally(tween(320, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(220))
                     }
-                    alarm?.let { a ->
-                        key(a.id) {
-                            AlarmEditorScreen(
-                                initial = a,
-                                isNew = editId == -1,
-                                onSave = { vm.save(it); screen = SCREEN_MAIN },
-                                onCancel = { screen = SCREEN_MAIN },
-                                onDelete = { vm.delete(a); screen = SCREEN_MAIN },
-                            )
+                    (enter togetherWith exit).also { it.targetContentZIndex = if (deeper) 1f else -1f }
+                },
+                label = "screens",
+            ) { s ->
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                    when (s) {
+                        is Screen.Editor -> {
+                            val initial = remember(s.id) { if (s.id == -1) vm.blank() else alarms.firstOrNull { it.id == s.id } }
+                            if (initial != null) {
+                                AlarmEditorScreen(
+                                    initial = initial,
+                                    isNew = s.id == -1,
+                                    onSave = { vm.save(it); kind = KIND_MAIN },
+                                    onCancel = { kind = KIND_MAIN },
+                                    onDelete = { vm.delete(initial); kind = KIND_MAIN },
+                                )
+                            }
+                        }
+                        Screen.Settings -> SettingsScreen(vm) { kind = KIND_MAIN }
+                        Screen.Main -> {
+                            Box(Modifier.fillMaxSize()) {
+                                AnimatedContent(
+                                    targetState = vm.tab,
+                                    transitionSpec = {
+                                        val dir = if (targetState > initialState) 1 else -1
+                                        (slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { it * dir } + fadeIn(tween(250))) togetherWith
+                                            (slideOutHorizontally(tween(300, easing = FastOutSlowInEasing)) { -it * dir / 3 } + fadeOut(tween(180)))
+                                    },
+                                    label = "tabs",
+                                ) { tab ->
+                                    when (tab) {
+                                        MainActivity.TAB_ALARMS -> AlarmsScreen(
+                                            alarms = alarms,
+                                            onToggle = vm::toggle,
+                                            onOpen = { editId = it.id; kind = KIND_EDITOR },
+                                            onAdd = { editId = -1; kind = KIND_EDITOR },
+                                            onPin = vm::togglePin,
+                                            onDelete = vm::delete,
+                                            onReorder = vm::saveOrder,
+                                            onSettings = { kind = KIND_SETTINGS },
+                                        )
+                                        MainActivity.TAB_STOPWATCH -> StopwatchScreen(stopwatch, vm::swToggle, vm::swLap, vm::swReset)
+                                        else -> TimerScreen(
+                                            state = timer,
+                                            onStart = vm::timerStart,
+                                            onPause = vm::timerPause,
+                                            onResume = vm::timerResume,
+                                            onCancel = vm::timerCancel,
+                                            onAddMinute = vm::timerAddMinute,
+                                            onSavePresets = vm::savePresets,
+                                            onEnterPip = onEnterPip,
+                                        )
+                                    }
+                                }
+                                BottomPill(vm.tab, { vm.tab = it }, Modifier.align(Alignment.BottomCenter))
+                                FullScreenPrompt()
+                            }
                         }
                     }
-                }
-                SCREEN_REMINDER_EDITOR -> {
-                    val reminder by produceState<Reminder?>(null, reminderId) {
-                        value = if (reminderId == -1) vm.blankReminder() else vm.loadReminder(reminderId)
-                    }
-                    reminder?.let { r ->
-                        key(r.id) {
-                            ReminderEditorScreen(
-                                initial = r,
-                                isNew = reminderId == -1,
-                                defaultMinutes = settings.reminderDefaultMinutes,
-                                onSave = { vm.saveReminder(it); screen = SCREEN_MAIN },
-                                onCancel = { screen = SCREEN_MAIN },
-                                onDelete = { vm.deleteReminder(r); screen = SCREEN_MAIN },
-                            )
-                        }
-                    }
-                }
-                SCREEN_SETTINGS -> SettingsScreen(vm) { screen = SCREEN_MAIN }
-                else -> Box(Modifier.fillMaxSize()) {
-                    when (vm.tab) {
-                        0 -> AlarmsScreen(
-                            alarms = alarms,
-                            onToggle = vm::toggle,
-                            onOpen = { editId = it.id; screen = SCREEN_EDITOR },
-                            onAdd = { editId = -1; screen = SCREEN_EDITOR },
-                            onQuick = vm::quick,
-                            onPin = vm::togglePin,
-                            onDelete = vm::delete,
-                            onReorder = vm::saveOrder,
-                            onSettings = { screen = SCREEN_SETTINGS },
-                            quickRequest = vm.quickRequest,
-                            onQuickConsumed = { vm.quickRequest = false },
-                        )
-                        1 -> RemindersScreen(
-                            reminders = reminders,
-                            defaultMinutes = settings.reminderDefaultMinutes,
-                            onOpen = { reminderId = it.id; screen = SCREEN_REMINDER_EDITOR },
-                            onAdd = { reminderId = -1; screen = SCREEN_REMINDER_EDITOR },
-                            onDelete = vm::deleteReminder,
-                            onTurnOff = vm::turnOffReminder,
-                            onSettings = { screen = SCREEN_SETTINGS },
-                        )
-                        2 -> StopwatchScreen(stopwatch, vm::swToggle, vm::swLap, vm::swReset)
-                        else -> TimerScreen(
-                            state = timer,
-                            onStart = vm::timerStart,
-                            onPause = vm::timerPause,
-                            onResume = vm::timerResume,
-                            onCancel = vm::timerCancel,
-                            onAddMinute = vm::timerAddMinute,
-                            onSavePresets = vm::savePresets,
-                            onEnterPip = onEnterPip,
-                        )
-                    }
-                    BottomPill(vm.tab, { vm.tab = it }, Modifier.align(Alignment.BottomCenter))
                 }
             }
         }
     }
 }
 
+/**
+ * Without the "full-screen notifications" permission Android keeps the lock screen asleep when an alarm
+ * rings. Sideloaded apps often start with it off on Android 14+, so ask for it up front.
+ */
+@Composable
+private fun FullScreenPrompt() {
+    if (Build.VERSION.SDK_INT < 34) return
+    val ctx = LocalContext.current
+    var show by rememberSaveable {
+        mutableStateOf(!ctx.getSystemService(NotificationManager::class.java).canUseFullScreenIntent())
+    }
+    if (!show) return
+    AlertDialog(
+        onDismissRequest = { show = false },
+        title = { Text("Let alarms wake your phone") },
+        text = { Text("Turn on full-screen notifications for this app so the alarm screen can light up and appear over the lock screen.") },
+        confirmButton = {
+            TextButton(onClick = {
+                show = false
+                try {
+                    ctx.startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:${ctx.packageName}")))
+                } catch (_: Exception) {
+                    ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}")))
+                }
+            }) { Text("Open settings") }
+        },
+        dismissButton = { TextButton(onClick = { show = false }) { Text("Not now") } },
+    )
+}
+
 @Composable
 private fun BottomPill(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier) {
-    val icons: List<ImageVector> = listOf(Icons.Outlined.Alarm, Icons.Outlined.Event, Icons.Outlined.Timer, Icons.Outlined.HourglassBottom)
+    val icons: List<ImageVector> = listOf(Icons.Outlined.Alarm, Icons.Outlined.Timer, Icons.Outlined.HourglassBottom)
     Surface(
         modifier = modifier.navigationBarsPadding().padding(bottom = 16.dp),
         shape = CircleShape,
@@ -212,15 +273,17 @@ private fun BottomPill(selected: Int, onSelect: (Int) -> Unit, modifier: Modifie
     ) {
         Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             icons.forEachIndexed { i, icon ->
+                val on = i == selected
+                val bg by animateColorAsState(if (on) MaterialTheme.colorScheme.primary else Color.Transparent, tween(250), label = "navBg")
+                val fg by animateColorAsState(
+                    if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    tween(250), label = "navFg",
+                )
                 Box(
-                    Modifier.clip(CircleShape)
-                        .background(if (i == selected) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent)
-                        .clickable { onSelect(i) }
-                        .padding(horizontal = 22.dp, vertical = 14.dp),
+                    Modifier.clip(CircleShape).background(bg).clickable { onSelect(i) }
+                        .padding(horizontal = 26.dp, vertical = 14.dp),
                     contentAlignment = Alignment.Center,
-                ) {
-                    Icon(icon, null, tint = if (i == selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                ) { Icon(icon, null, tint = fg) }
             }
         }
     }

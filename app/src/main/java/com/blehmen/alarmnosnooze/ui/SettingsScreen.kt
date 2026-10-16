@@ -55,7 +55,6 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
         onDispose { owner.lifecycle.removeObserver(obs) }
     }
     var maxDialog by remember { mutableStateOf(false) }
-    var reminderTimeDialog by remember { mutableStateOf(false) }
     var pendingImport by remember { mutableStateOf<Uri?>(null) }
 
     val soundPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
@@ -171,19 +170,10 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                 )
             }
 
-            Header("Date reminders")
-            val is24 = remember { android.text.format.DateFormat.is24HourFormat(ctx) }
-            val (rt, rap) = com.blehmen.alarmnosnooze.engine.timeParts(s.reminderDefaultMinutes / 60, s.reminderDefaultMinutes % 60, is24)
-            Column(Modifier.fillMaxWidth().clickable { reminderTimeDialog = true }.padding(vertical = 12.dp)) {
-                Text("Default reminder time", fontSize = 16.sp)
-                Text("Used when a reminder has a date but no time: ${if (rap.isEmpty()) rt else "$rt $rap"}",
-                    fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-
             Header("Backup")
             Column(Modifier.fillMaxWidth().clickable { exportLauncher.launch("alarm-no-snooze-backup.json") }.padding(vertical = 12.dp)) {
                 Text("Back up to file", fontSize = 16.sp)
-                Text("Alarms, reminders, timer presets and all settings as JSON", fontSize = 13.sp,
+                Text("Alarms, timer presets and all settings as JSON", fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Column(Modifier.fillMaxWidth().clickable { importLauncher.launch(arrayOf("*/*")) }.padding(vertical = 12.dp)) {
@@ -233,23 +223,11 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
         AlertDialog(
             onDismissRequest = { pendingImport = null },
             title = { Text("Restore backup?") },
-            text = { Text("This replaces all current alarms, reminders and settings with the contents of the file.") },
+            text = { Text("This replaces all current alarms and settings with the contents of the file.") },
             confirmButton = {
                 TextButton(onClick = { pendingImport = null; vm.importBackup(uri, toast) }) { Text("Restore") }
             },
             dismissButton = { TextButton(onClick = { pendingImport = null }) { Text("Cancel") } },
-        )
-    }
-
-    if (reminderTimeDialog) {
-        val is24 = android.text.format.DateFormat.is24HourFormat(ctx)
-        val st = rememberTimePickerState(s.reminderDefaultMinutes / 60, s.reminderDefaultMinutes % 60, is24)
-        AlertDialog(
-            onDismissRequest = { reminderTimeDialog = false },
-            title = { Text("Default reminder time") },
-            text = { TimePicker(state = st) },
-            confirmButton = { TextButton(onClick = { vm.setReminderTime(st.hour * 60 + st.minute); reminderTimeDialog = false }) { Text("Set") } },
-            dismissButton = { TextButton(onClick = { reminderTimeDialog = false }) { Text("Cancel") } },
         )
     }
 

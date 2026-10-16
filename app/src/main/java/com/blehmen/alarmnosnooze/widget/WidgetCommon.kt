@@ -35,11 +35,11 @@ fun onColorFor(c: Color): Color =
     if (0.2126f * c.red + 0.7152f * c.green + 0.0722f * c.blue > 0.5f) Color.Black else Color.White
 
 /** Opens the app on a tab. The action string keeps each widget PendingIntent distinct. */
-fun openApp(ctx: Context, tab: Int, quick: Boolean = false): Action = actionStartActivity(
+fun openApp(ctx: Context, tab: Int, newAlarm: Boolean = false): Action = actionStartActivity(
     Intent(ctx, MainActivity::class.java)
-        .setAction("com.blehmen.alarmnosnooze.WIDGET_OPEN_${tab}_$quick")
+        .setAction("com.blehmen.alarmnosnooze.WIDGET_OPEN_${tab}_$newAlarm")
         .putExtra(MainActivity.EXTRA_TAB, tab)
-        .putExtra(MainActivity.EXTRA_QUICK, quick)
+        .putExtra(MainActivity.EXTRA_NEW_ALARM, newAlarm)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
 )
 

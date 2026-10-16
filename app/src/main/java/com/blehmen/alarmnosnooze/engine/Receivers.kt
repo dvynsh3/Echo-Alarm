@@ -21,24 +21,6 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 }
 
-class ReminderReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        val id = intent.getIntExtra(ReminderEngine.EXTRA_ID, -1)
-        val engine = context.app.reminders
-        val pending = goAsync()
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                when (intent.action) {
-                    ReminderEngine.ACTION_FIRE -> engine.fire(id)
-                    ReminderEngine.ACTION_DONE -> engine.done(id)
-                }
-            } finally {
-                pending.finish()
-            }
-        }
-    }
-}
-
 class TimerReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val app = context.app
@@ -65,17 +47,17 @@ class TimerReceiver : BroadcastReceiver() {
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val alarms = context.app.engine
-        val reminders = context.app.reminders
+        val app = context.app
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 when (intent.action) {
                     Intent.ACTION_BOOT_COMPLETED -> {
-                        alarms.onBoot(); reminders.onBoot()
-                        context.app.timerEngine.onBoot(); context.app.stopwatchEngine.onBoot()
+                        app.engine.onBoot()
+                        app.timerEngine.onBoot()
+                        app.stopwatchEngine.onBoot()
                     }
-                    else -> { alarms.rescheduleAll(); reminders.rescheduleAll() }
+                    else -> app.engine.rescheduleAll()
                 }
             } finally {
                 pending.finish()

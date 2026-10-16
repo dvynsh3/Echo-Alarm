@@ -55,7 +55,7 @@ private fun TimerWidgetContent(s: TimerState, accent: Color) {
         GlanceModifier.fillMaxSize().background(cp(WidgetBg)).cornerRadius(24.dp).padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("Timer", modifier = GlanceModifier.clickable(openApp(ctx, 3)),
+        Text("Timer", modifier = GlanceModifier.clickable(openApp(ctx, 2)),
             style = TextStyle(color = cp(WidgetMuted), fontSize = 12.sp))
         Spacer(GlanceModifier.height(4.dp))
         when (s.phase) {

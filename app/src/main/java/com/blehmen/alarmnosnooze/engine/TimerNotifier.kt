@@ -54,7 +54,7 @@ object TimerNotifier {
         flags()
     )
 
-    fun openTimer(ctx: Context) = open(ctx, 3)
+    fun openTimer(ctx: Context) = open(ctx, 2)
 
     private fun act(ctx: Context, action: String) = PendingIntent.getBroadcast(
         ctx, action.hashCode(), Intent(ctx, TimerReceiver::class.java).setAction(action), flags()
@@ -77,7 +77,7 @@ object TimerNotifier {
             .setCategory(Notification.CATEGORY_PROGRESS)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setContentIntent(open(ctx, 3))
+            .setContentIntent(open(ctx, 2))
         if (s.phase == Phase.RUNNING) {
             b.setContentText("Counting down")
                 .setWhen(s.endAt).setShowWhen(true).setUsesChronometer(true).setChronometerCountDown(true)
@@ -103,7 +103,7 @@ object TimerNotifier {
             .setCategory(Notification.CATEGORY_PROGRESS)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setContentIntent(open(ctx, 2))
+            .setContentIntent(open(ctx, 1))
         if (s.running) {
             b.setContentText("Running")
                 .setWhen(now - elapsed).setShowWhen(true).setUsesChronometer(true)
@@ -127,7 +127,7 @@ object TimerNotifier {
             .setContentText("Time's up")
             .setCategory(Notification.CATEGORY_ALARM)
             .setOngoing(true)
-            .setContentIntent(open(ctx, 3))
+            .setContentIntent(open(ctx, 2))
             .action(ctx, "Stop", TimerActions.STOP)
             .action(ctx, "+1:00", TimerActions.ADD_MINUTE)
             .build()

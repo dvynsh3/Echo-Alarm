@@ -1,24 +1,49 @@
 package com.blehmen.alarmnosnooze.ui
 
 import android.text.format.DateFormat
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.UnfoldMore
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -61,107 +86,164 @@ fun AlarmsScreen(
     onToggle: (Alarm, Boolean) -> Unit,
     onOpen: (Alarm) -> Unit,
     onAdd: () -> Unit,
-    onQuick: (Int, Int) -> Unit,
     onPin: (Alarm) -> Unit,
     onDelete: (Alarm) -> Unit,
     onReorder: (List<Alarm>) -> Unit,
     onSettings: () -> Unit,
-    quickRequest: Boolean = false,
-    onQuickConsumed: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val density = LocalDensity.current
     val is24 = remember { DateFormat.is24HourFormat(ctx) }
+
     var list by remember(alarms) { mutableStateOf(alarms) }
     val currentList by rememberUpdatedState(list)
-    var reorder by remember { mutableStateOf(false) }
-    var menu by remember { mutableStateOf(false) }
-    var showQuick by remember { mutableStateOf(false) }
-    LaunchedEffect(quickRequest) { if (quickRequest) { showQuick = true; onQuickConsumed() } }
+    var editMode by remember { mutableStateOf(false) }
+
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(15_000) } }
 
-    val listState = rememberLazyListState()
-    var dragIdx by remember { mutableStateOf<Int?>(null) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
+    BackHandler(enabled = editMode) { editMode = false }
 
-    fun dragBy(dy: Float) {
-        val from = dragIdx ?: return
-        dragOffset += dy
-        val infos = listState.layoutInfo.visibleItemsInfo
-        val cur = infos.firstOrNull { it.index == from } ?: return
-        val center = cur.offset + dragOffset + cur.size / 2f
-        val target = infos.firstOrNull { it.index != from && center >= it.offset && center <= it.offset + it.size } ?: return
-        val l = currentList
-        if (l[from].pinned != l[target.index].pinned) return
-        list = l.toMutableList().apply { add(target.index, removeAt(from)) }
-        val newLayout = if (target.index > from) target.offset + target.size - cur.size else target.offset
-        dragOffset += cur.offset - newLayout
-        dragIdx = target.index
+    // ---- drag-to-reorder -------------------------------------------------------------
+    val listState = rememberLazyListState()
+    var draggingId by remember { mutableStateOf<Int?>(null) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val slackPx = with(density) { 8.dp.toPx() }
+    val edgePx = with(density) { 96.dp.toPx() }
+
+    fun endDrag() {
+        if (draggingId != null) onReorder(currentList) // saved the moment you let go
+        draggingId = null
+        dragOffset = 0f
     }
 
-    val nextMs = alarms.filter { it.enabled && it.nextTriggerAt > now }.minOfOrNull { it.nextTriggerAt }
-    val headline = if (nextMs == null) "All alarms are off" else "Alarm in ${durationText(nextMs - now)}"
+    fun dragBy(dy: Float) {
+        val id = draggingId ?: return
+        dragOffset += dy
+        val infos = listState.layoutInfo.visibleItemsInfo
+        val cur = infos.firstOrNull { it.key == id } ?: return
 
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically) {
-            if (reorder) {
-                TextButton(onClick = { reorder = false; onReorder(list) }) { Text("Done") }
-            } else {
-                IconButton(onClick = { showQuick = true }) { Icon(Icons.Filled.FlashOn, "Quick alarm") }
-                IconButton(onClick = onAdd) { Icon(Icons.Filled.Add, "Add alarm") }
-                Box {
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More") }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        DropdownMenuItem(text = { Text("Reorder") }, onClick = { menu = false; reorder = true })
-                        DropdownMenuItem(text = { Text("Settings") }, onClick = { menu = false; onSettings() })
+        // Keep the dragged card under the finger when it nears the top or bottom of the list.
+        val top = cur.offset + dragOffset
+        val bottom = top + cur.size
+        val viewport = listState.layoutInfo
+        val scroll = when {
+            bottom > viewport.viewportEndOffset - edgePx -> 28f
+            top < viewport.viewportStartOffset + edgePx -> -28f
+            else -> 0f
+        }
+        if (scroll != 0f) dragOffset += listState.dispatchRawDelta(scroll)
+
+        // Only swap when the layout on screen already reflects the current order; otherwise a stale
+        // measurement could trigger a double swap and make the card jump.
+        val order = currentList.map { it.id }
+        val visibleKeys = infos.mapNotNull { it.key as? Int }
+        if (visibleKeys != order.filter { it in visibleKeys }) return
+
+        val centerY = cur.offset + dragOffset + cur.size / 2f
+        val target = infos.firstOrNull {
+            it.key != id && it.key is Int && centerY >= it.offset - slackPx && centerY <= it.offset + it.size + slackPx
+        } ?: return
+        val l = currentList
+        val from = l.indexOfFirst { it.id == id }
+        val to = l.indexOfFirst { it.id == target.key }
+        if (from < 0 || to < 0 || l[from].pinned != l[to].pinned) return // pinned alarms stay above the rest
+        list = l.toMutableList().apply { add(to, removeAt(from)) }
+        val newLayoutOffset = if (to > from) target.offset + target.size - cur.size else target.offset
+        dragOffset += cur.offset - newLayoutOffset
+    }
+
+    // ---- UI ----------------------------------------------------------------------------
+    val nextMs = alarms.filter { it.enabled && it.nextTriggerAt > now }.minOfOrNull { it.nextTriggerAt }
+    val headline = when {
+        editMode -> "Edit alarms"
+        nextMs == null -> "All alarms are off"
+        else -> "Alarm in ${durationText(nextMs - now)}"
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.End) {
+                IconButton(onClick = onSettings) { Icon(Icons.Outlined.Settings, "Settings") }
+            }
+            Box(Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                AnimatedContent(
+                    targetState = headline,
+                    transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
+                    label = "headline",
+                ) { text ->
+                    Text(text, fontSize = 28.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onBackground)
+                }
+            }
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.weight(1f),
+                userScrollEnabled = draggingId == null,
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 180.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item(key = "actions") {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onAdd) {
+                            Icon(Icons.Filled.Add, "Add alarm", tint = MaterialTheme.colorScheme.primary)
+                        }
+                        IconButton(onClick = { editMode = !editMode }) {
+                            AnimatedContent(
+                                targetState = editMode,
+                                transitionSpec = { (fadeIn(tween(180)) + scaleIn(initialScale = 0.6f)) togetherWith fadeOut(tween(120)) },
+                                label = "editIcon",
+                            ) { e ->
+                                Icon(
+                                    if (e) Icons.Filled.Check else Icons.Outlined.Edit,
+                                    if (e) "Done editing" else "Edit alarms",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
                     }
+                }
+                itemsIndexed(list, key = { _, a -> a.id }) { _, alarm ->
+                    val dragging = draggingId == alarm.id
+                    val itemMod = if (dragging) Modifier.zIndex(1f).graphicsLayer {
+                        translationY = dragOffset; scaleX = 1.02f; scaleY = 1.02f
+                    } else Modifier.animateItem()
+                    AlarmCard(
+                        alarm = alarm, is24 = is24, now = now, editMode = editMode, dragging = dragging,
+                        modifier = itemMod,
+                        handleModifier = Modifier.pointerInput(alarm.id) {
+                            detectDragGestures(
+                                onDragStart = { draggingId = alarm.id; dragOffset = 0f },
+                                onDragEnd = { endDrag() },
+                                onDragCancel = { endDrag() },
+                                onDrag = { change, amount -> change.consume(); dragBy(amount.y) },
+                            )
+                        },
+                        onToggle = { onToggle(alarm, it) },
+                        onClick = { onOpen(alarm) },
+                        onLongClick = {
+                            if (!editMode) { haptic.performHapticFeedback(HapticFeedbackType.LongPress); editMode = true }
+                        },
+                        onPin = { onPin(alarm) },
+                        onDelete = { onDelete(alarm) },
+                    )
                 }
             }
         }
-        Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-            Text(headline, fontSize = 28.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onBackground)
-        }
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            itemsIndexed(list, key = { _, a -> a.id }) { index, alarm ->
-                val dragging = dragIdx == index
-                val itemMod = if (dragging) Modifier.zIndex(1f).graphicsLayer { translationY = dragOffset }
-                else Modifier.animateItem()
-                AlarmCard(
-                    alarm = alarm, is24 = is24, now = now, reorder = reorder,
-                    modifier = itemMod,
-                    handleModifier = Modifier.pointerInput(alarm.id) {
-                        detectDragGestures(
-                            onDragStart = { dragIdx = currentList.indexOfFirst { it.id == alarm.id }; dragOffset = 0f },
-                            onDragEnd = { dragIdx = null; dragOffset = 0f },
-                            onDragCancel = { dragIdx = null; dragOffset = 0f },
-                            onDrag = { change, amount -> change.consume(); dragBy(amount.y) },
-                        )
-                    },
-                    onToggle = { onToggle(alarm, it) },
-                    onClick = { onOpen(alarm) },
-                    onPin = { onPin(alarm) },
-                    onDelete = { onDelete(alarm) },
-                )
-            }
-        }
-    }
 
-    if (showQuick) {
-        val t = remember { java.time.LocalTime.now() }
-        val st = rememberTimePickerState(t.hour, t.minute, is24)
-        AlertDialog(
-            onDismissRequest = { showQuick = false },
-            title = { Text("Quick alarm") },
-            text = { TimePicker(state = st) },
-            confirmButton = { TextButton(onClick = { showQuick = false; onQuick(st.hour, st.minute) }) { Text("Set") } },
-            dismissButton = { TextButton(onClick = { showQuick = false }) { Text("Cancel") } },
-        )
+        AnimatedVisibility(
+            visible = !editMode,
+            modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 20.dp, bottom = 104.dp),
+            enter = scaleIn(tween(220)) + fadeIn(tween(220)),
+            exit = scaleOut(tween(160)) + fadeOut(tween(160)),
+        ) {
+            FloatingActionButton(
+                onClick = onAdd,
+                shape = CircleShape,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            ) { Icon(Icons.Filled.Add, "Add alarm") }
+        }
     }
 }
 
@@ -171,16 +253,17 @@ private fun AlarmCard(
     alarm: Alarm,
     is24: Boolean,
     now: Long,
-    reorder: Boolean,
+    editMode: Boolean,
+    dragging: Boolean,
     modifier: Modifier,
     handleModifier: Modifier,
     onToggle: (Boolean) -> Unit,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onPin: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val ctx = LocalContext.current
-    var menu by remember { mutableStateOf(false) }
     val (time, ampm) = timeParts(alarm.hour, alarm.minute, is24)
     val tags = buildList {
         if (alarm.quick) add("Quick")
@@ -189,42 +272,76 @@ private fun AlarmCard(
         if (alarm.sessionActive && alarm.nextAgainAt > now)
             add("Rings again ${DateFormat.getTimeFormat(ctx).format(Date(alarm.nextAgainAt))}")
     }
-    val clickMod = if (reorder) Modifier else Modifier.combinedClickable(onClick = onClick, onLongClick = { menu = true })
+    val dim by animateFloatAsState(if (alarm.enabled) 1f else 0.5f, tween(250), label = "dim")
+    val elevation by animateDpAsState(if (dragging) 14.dp else 0.dp, label = "lift")
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
 
     Surface(
-        modifier = modifier.fillMaxWidth().then(clickMod),
+        modifier = modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
         shape = RoundedCornerShape(28.dp),
         color = MaterialTheme.colorScheme.surface,
+        shadowElevation = elevation,
     ) {
-        Row(Modifier.padding(horizontal = 22.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f).alpha(if (alarm.enabled) 1f else 0.5f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (alarm.pinned) {
-                        Icon(Icons.Filled.PushPin, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(4.dp))
+        Box {
+            // Small curved accent tab on the left edge while the alarm is on.
+            AnimatedVisibility(
+                visible = alarm.enabled,
+                modifier = Modifier.align(Alignment.CenterStart),
+                enter = fadeIn(tween(220)) + scaleIn(tween(220), initialScale = 0.3f, transformOrigin = TransformOrigin(0f, 0.5f)),
+                exit = fadeOut(tween(160)) + scaleOut(tween(160), targetScale = 0.3f, transformOrigin = TransformOrigin(0f, 0.5f)),
+            ) {
+                Box(
+                    Modifier.width(6.dp).height(56.dp)
+                        .clip(RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp))
+                        .background(MaterialTheme.colorScheme.primary)
+                )
+            }
+            Row(
+                Modifier.padding(start = 24.dp, end = 14.dp, top = 18.dp, bottom = 18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f).alpha(dim)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (alarm.pinned) {
+                            Icon(Icons.Filled.PushPin, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(4.dp))
+                        }
+                        if (alarm.label.isNotBlank()) Text(alarm.label, fontSize = 14.sp, color = muted)
                     }
-                    if (alarm.label.isNotBlank())
-                        Text(alarm.label, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(time, fontSize = 44.sp, fontWeight = FontWeight.Normal)
+                        if (ampm.isNotEmpty())
+                            Text(ampm, fontSize = 18.sp, modifier = Modifier.padding(start = 6.dp, bottom = 8.dp))
+                    }
+                    Text(dayLabel(alarm), fontSize = 14.sp, color = muted)
+                    if (tags.isNotEmpty())
+                        Text(tags.joinToString(" · "), fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                 }
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(time, fontSize = 48.sp, fontWeight = FontWeight.Normal)
-                    if (ampm.isNotEmpty())
-                        Text(ampm, fontSize = 20.sp, modifier = Modifier.padding(start = 6.dp, bottom = 9.dp))
+                AnimatedContent(
+                    targetState = editMode,
+                    transitionSpec = { (fadeIn(tween(200)) + scaleIn(tween(200), initialScale = 0.8f)) togetherWith fadeOut(tween(120)) },
+                    label = "cardControls",
+                ) { edit ->
+                    if (edit) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = onPin, modifier = Modifier.size(38.dp)) {
+                                Icon(
+                                    if (alarm.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                                    if (alarm.pinned) "Unpin" else "Pin",
+                                    tint = if (alarm.pinned) MaterialTheme.colorScheme.primary else muted,
+                                )
+                            }
+                            IconButton(onClick = onDelete, modifier = Modifier.size(38.dp)) {
+                                Icon(Icons.Outlined.Delete, "Delete", tint = muted)
+                            }
+                            Box(handleModifier.size(38.dp), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Filled.UnfoldMore, "Drag to reorder", tint = muted)
+                            }
+                        }
+                    } else {
+                        Switch(checked = alarm.enabled, onCheckedChange = onToggle)
+                    }
                 }
-                Text(dayLabel(alarm), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (tags.isNotEmpty())
-                    Text(tags.joinToString(" · "), fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-            }
-            if (reorder) {
-                Icon(Icons.Filled.DragHandle, "Drag to reorder", handleModifier.size(36.dp))
-            } else {
-                Switch(checked = alarm.enabled, onCheckedChange = onToggle)
-            }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(
-                    text = { Text(if (alarm.pinned) "Unpin" else "Pin to top") },
-                    onClick = { menu = false; onPin() })
-                DropdownMenuItem(text = { Text("Delete") }, onClick = { menu = false; onDelete() })
             }
         }
     }

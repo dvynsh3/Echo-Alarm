@@ -8,7 +8,6 @@ import com.blehmen.alarmnosnooze.MainActivity
 import com.blehmen.alarmnosnooze.R
 import com.blehmen.alarmnosnooze.RingingActivity
 import com.blehmen.alarmnosnooze.data.Alarm
-import com.blehmen.alarmnosnooze.data.Reminder
 import com.blehmen.alarmnosnooze.service.AlarmService
 import java.util.Date
 
@@ -16,7 +15,6 @@ object Notifier {
     const val CH_RING = "ring"
     const val CH_INFO = "info"
     const val CH_REPEAT = "repeat"
-    const val CH_REMINDER = "reminder"
     const val RING_ID = 1
 
     fun createChannels(ctx: Context) {
@@ -30,8 +28,7 @@ object Notifier {
         )
         nm.createNotificationChannel(NotificationChannel(CH_INFO, "Alarm notices", NotificationManager.IMPORTANCE_DEFAULT))
         nm.createNotificationChannel(NotificationChannel(CH_REPEAT, "Repeating alarms", NotificationManager.IMPORTANCE_LOW))
-        // Default notification sound (not the alarm sound).
-        nm.createNotificationChannel(NotificationChannel(CH_REMINDER, "Date reminders", NotificationManager.IMPORTANCE_HIGH))
+        nm.deleteNotificationChannel("reminder") // channel from a removed feature
     }
 
     private fun immutable() = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
@@ -49,26 +46,38 @@ object Notifier {
     private fun timeText(ctx: Context, millis: Long) = DateFormat.getTimeFormat(ctx).format(Date(millis))
     private fun title(a: Alarm) = a.label.ifBlank { "Alarm" }
 
-    fun placeholder(ctx: Context): Notification =
-        Notification.Builder(ctx, CH_RING)
+    private fun screenIntent(ctx: Context) = PendingIntent.getActivity(
+        ctx, 1,
+        Intent(ctx, RingingActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+        immutable()
+    )
+
+    /**
+     * Shown the instant the service starts. It already carries the full-screen intent, otherwise the later
+     * update would only refresh a notification that never asked to take over the lock screen.
+     */
+    fun placeholder(ctx: Context): Notification {
+        val screen = screenIntent(ctx)
+        return Notification.Builder(ctx, CH_RING)
             .setSmallIcon(R.drawable.ic_notif)
             .setContentTitle("Alarm")
             .setCategory(Notification.CATEGORY_ALARM)
             .setOngoing(true)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setContentIntent(screen)
+            .setFullScreenIntent(screen, true)
             .build()
+    }
 
     fun ringing(ctx: Context, a: Alarm): Notification {
-        val screen = PendingIntent.getActivity(
-            ctx, 1,
-            Intent(ctx, RingingActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-            immutable()
-        )
+        val screen = screenIntent(ctx)
         val b = Notification.Builder(ctx, CH_RING)
             .setSmallIcon(R.drawable.ic_notif)
             .setContentTitle(title(a))
             .setContentText(timeText(ctx, System.currentTimeMillis()))
             .setCategory(Notification.CATEGORY_ALARM)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setContentIntent(screen)
             .setFullScreenIntent(screen, true)
@@ -111,32 +120,5 @@ object Notifier {
             .setContentIntent(openApp(ctx))
             .build()
         ctx.getSystemService(NotificationManager::class.java).notify(20000 + id, n)
-    }
-
-    private fun reminderBroadcast(ctx: Context, action: String, id: Int, code: Int) = PendingIntent.getBroadcast(
-        ctx, code,
-        Intent(ctx, ReminderReceiver::class.java).setAction(action).putExtra(ReminderEngine.EXTRA_ID, id),
-        immutable()
-    )
-
-    /** Persistent until the user clears it or taps Turn off; both mark the reminder as done. */
-    fun reminder(ctx: Context, r: Reminder, whenText: String) {
-        val done = reminderBroadcast(ctx, ReminderEngine.ACTION_DONE, r.id, 300000 + r.id)
-        val n = Notification.Builder(ctx, CH_REMINDER)
-            .setSmallIcon(R.drawable.ic_notif)
-            .setContentTitle(r.title.ifBlank { "Reminder" })
-            .setContentText(whenText)
-            .setCategory(Notification.CATEGORY_REMINDER)
-            .setOngoing(true)
-            .setAutoCancel(false)
-            .setContentIntent(openApp(ctx))
-            .setDeleteIntent(done)
-            .addAction(Notification.Action.Builder(null, "Turn off", done).build())
-            .build()
-        ctx.getSystemService(NotificationManager::class.java).notify(30000 + r.id, n)
-    }
-
-    fun cancelReminder(ctx: Context, id: Int) {
-        ctx.getSystemService(NotificationManager::class.java).cancel(30000 + id)
     }
 }

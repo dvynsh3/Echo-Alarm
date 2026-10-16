@@ -20,6 +20,10 @@ interface AlarmDao {
     @Update
     suspend fun update(alarm: Alarm)
 
+    /** One transaction, so observers never see a half-written order. */
+    @Update
+    suspend fun updateAll(alarms: List<Alarm>)
+
     @Query("DELETE FROM alarms WHERE id = :id")
     suspend fun deleteById(id: Int)
 
@@ -30,8 +34,7 @@ interface AlarmDao {
     suspend fun setOrder(id: Int, order: Int)
 }
 
-@Database(entities = [Alarm::class, Reminder::class], version = 2, exportSchema = false)
+@Database(entities = [Alarm::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun alarmDao(): AlarmDao
-    abstract fun reminderDao(): ReminderDao
 }

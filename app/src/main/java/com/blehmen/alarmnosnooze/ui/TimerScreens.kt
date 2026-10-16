@@ -1,5 +1,11 @@
 package com.blehmen.alarmnosnooze.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -47,7 +53,13 @@ private fun CircleButton(label: String, filled: Boolean, enabled: Boolean = true
         Modifier.size(100.dp).clip(CircleShape).background(bg.copy(alpha = if (enabled) 1f else 0.4f))
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Text(label, color = fg.copy(alpha = if (enabled) 1f else 0.5f), fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+    ) {
+        AnimatedContent(
+            targetState = label,
+            transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
+            label = "buttonLabel",
+        ) { l -> Text(l, color = fg.copy(alpha = if (enabled) 1f else 0.5f), fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+    }
 }
 
 private fun presetLabel(sec: Int) = "%02d:%02d:%02d".format(sec / 3600, (sec % 3600) / 60, sec % 60)
@@ -64,9 +76,9 @@ fun HmsWheels(
     val sixty = remember { (0..59).map { "%02d".format(it) } }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
         WheelPicker(hours, h, true, { onChange(it, m, s) }, Modifier.width(cellWidth), rowHeight, fontSize)
-        Text(":", fontSize = fontSize, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+        Text(":", fontSize = fontSize, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
         WheelPicker(sixty, m, true, { onChange(h, it, s) }, Modifier.width(cellWidth), rowHeight, fontSize)
-        Text(":", fontSize = fontSize, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+        Text(":", fontSize = fontSize, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
         WheelPicker(sixty, s, true, { onChange(h, m, it) }, Modifier.width(cellWidth), rowHeight, fontSize)
     }
 }
@@ -84,8 +96,14 @@ fun TimerScreen(
     onSavePresets: (List<Int>) -> Unit,
     onEnterPip: () -> Unit,
 ) {
-    if (state.phase == Phase.IDLE) TimerSetup(state, onStart, onSavePresets)
-    else TimerRunning(state, onPause, onResume, onCancel, onAddMinute, onEnterPip)
+    AnimatedContent(
+        targetState = state.phase == Phase.IDLE,
+        transitionSpec = { (fadeIn(tween(260)) + scaleIn(tween(260), initialScale = 0.94f)) togetherWith fadeOut(tween(160)) },
+        label = "timerPhase",
+    ) { idle ->
+        if (idle) TimerSetup(state, onStart, onSavePresets)
+        else TimerRunning(state, onPause, onResume, onCancel, onAddMinute, onEnterPip)
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -119,7 +137,7 @@ private fun TimerSetup(state: TimerState, onStart: (Long, Int) -> Unit, onSavePr
                         onLongClick = { editIdx = i },
                     ),
                 ) {
-                    Text(presetLabel(sec), fontSize = 17.sp, fontWeight = FontWeight.Medium,
+                    Text(presetLabel(sec), fontSize = 17.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp))
                 }
             }
@@ -282,7 +300,7 @@ fun StopwatchScreen(state: StopwatchState, onToggle: () -> Unit, onLap: () -> Un
             itemsIndexed(rows) { _, (n, split, total) ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Lap $n", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(72.dp))
-                    Text("+" + fmtStopwatch(split), fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                    Text("+" + fmtStopwatch(split), fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
                     Text(fmtStopwatch(total), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }

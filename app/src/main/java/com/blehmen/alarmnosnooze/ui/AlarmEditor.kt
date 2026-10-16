@@ -7,29 +7,44 @@ import android.net.Uri
 import android.text.format.DateFormat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.IntentCompat
 import com.blehmen.alarmnosnooze.data.Alarm
+import com.blehmen.alarmnosnooze.data.Days
 import com.blehmen.alarmnosnooze.engine.nextOccurrence
+import kotlinx.coroutines.delay
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -64,12 +79,19 @@ fun AlarmEditorScreen(
     val dateText = if (a.repeatDays == 0) {
         val d = nextOccurrence(a.hour, a.minute, 0).toLocalDate()
         (if (d == LocalDate.now()) "Today" else "Tomorrow") + " - " + d.format(DateTimeFormatter.ofPattern("EEE, d MMM"))
-    } else com.blehmen.alarmnosnooze.data.Days.summary(a.repeatDays)
+    } else Days.summary(a.repeatDays)
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).systemBarsPadding()) {
         Column(Modifier.fillMaxSize()) {
             Spacer(Modifier.height(24.dp))
-            TimeWheels(a.hour, a.minute, is24) { h, m -> a = a.copy(hour = h, minute = m) }
+            Box(Modifier.fillMaxWidth()) {
+                TimeWheels(a.hour, a.minute, is24) { h, m -> a = a.copy(hour = h, minute = m) }
+                if (!isNew) {
+                    IconButton(onClick = onDelete, modifier = Modifier.align(Alignment.TopEnd).padding(end = 8.dp)) {
+                        Icon(Icons.Outlined.Delete, "Delete alarm", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
             Spacer(Modifier.height(16.dp))
 
             Surface(
@@ -78,9 +100,10 @@ fun AlarmEditorScreen(
                 color = MaterialTheme.colorScheme.surface,
             ) {
                 Column(
-                    Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(top = 24.dp, bottom = 120.dp)
+                    Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)
+                        .padding(top = 24.dp, bottom = if (isNew) 120.dp else 180.dp)
                 ) {
-                    Text(dateText, fontSize = 15.sp)
+                    Text(dateText, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(20.dp))
                     DayChips(a.repeatDays) { a = a.copy(repeatDays = it) }
                     Spacer(Modifier.height(16.dp))
@@ -115,7 +138,7 @@ fun AlarmEditorScreen(
 
                     ToggleRow("Gradual volume", if (a.rampEnabled) "Ramps up over ${a.rampSeconds} seconds" else null,
                         a.rampEnabled, { a = a.copy(rampEnabled = it) })
-                    if (a.rampEnabled) {
+                    AnimatedVisibility(a.rampEnabled, enter = expandVertically(tween(220)) + fadeIn(), exit = shrinkVertically(tween(180)) + fadeOut()) {
                         Slider(
                             value = a.rampSeconds.toFloat(),
                             onValueChange = { a = a.copy(rampSeconds = it.toInt()) },
@@ -136,27 +159,38 @@ fun AlarmEditorScreen(
                         { on -> a = a.copy(autoRepeatEnabled = on, snoozeEnabled = if (on) false else a.snoozeEnabled) },
                         onClick = { dialog = EditorDialog.Repeat },
                     )
-                    if (a.autoRepeatEnabled) {
+                    AnimatedVisibility(a.autoRepeatEnabled, enter = expandVertically(tween(220)) + fadeIn(), exit = shrinkVertically(tween(180)) + fadeOut()) {
                         val sub = a.endMinutes?.let { "%02d:%02d".format(it / 60, it % 60) } ?: "Not set (uses max repeats)"
                         SettingRow("End time", sub) { dialog = EditorDialog.EndTime }
-                    }
-
-                    if (!isNew) {
-                        Spacer(Modifier.height(16.dp))
-                        TextButton(onClick = onDelete) { Text("Delete alarm", color = MaterialTheme.colorScheme.error) }
                     }
                 }
             }
         }
 
-        Surface(
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp),
-            shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        Column(
+            Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onCancel, modifier = Modifier.width(120.dp)) { Text("Cancel", fontWeight = FontWeight.Bold) }
-                Box(Modifier.width(1.dp).height(28.dp).background(MaterialTheme.colorScheme.outline))
-                TextButton(onClick = { onSave(a) }, modifier = Modifier.width(120.dp)) { Text("Save", fontWeight = FontWeight.Bold) }
+            if (!isNew) {
+                // Narrower than the Cancel | Save pill below it.
+                Surface(
+                    onClick = onDelete,
+                    modifier = Modifier.width(150.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.errorContainer,
+                ) {
+                    Box(Modifier.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                        Text("Delete", color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+            }
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onCancel, modifier = Modifier.width(120.dp)) { Text("Cancel", fontWeight = FontWeight.Bold) }
+                    Box(Modifier.width(1.dp).height(28.dp).background(MaterialTheme.colorScheme.outline))
+                    TextButton(onClick = { onSave(a) }, modifier = Modifier.width(120.dp)) { Text("Save", fontWeight = FontWeight.Bold) }
+                }
             }
         }
     }
@@ -189,10 +223,9 @@ private fun DayChips(mask: Int, onChange: (Int) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         letters.forEachIndexed { i, l ->
             val on = (mask and (1 shl i)) != 0
+            val bg by animateColorAsState(if (on) MaterialTheme.colorScheme.primary else Color.Transparent, tween(200), label = "day")
             Box(
-                Modifier.size(40.dp).clip(CircleShape)
-                    .background(if (on) MaterialTheme.colorScheme.primary else Color.Transparent)
-                    .clickable { onChange(mask xor (1 shl i)) },
+                Modifier.size(40.dp).clip(CircleShape).background(bg).clickable { onChange(mask xor (1 shl i)) },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -238,42 +271,60 @@ private fun ToggleRow(
     }
 }
 
+/**
+ * Hand-built dialog so the gap between the options and the buttons is under our control
+ * (AlertDialog leaves a large empty band when the confirm button is hidden).
+ */
 @Composable
 fun DurationDialog(title: String, current: Int, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
     val presets = listOf(2, 5, 10, 30)
     var custom by remember { mutableStateOf(current !in presets) }
     var text by remember { mutableStateOf(current.toString()) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column {
-                presets.forEach { m ->
-                    RadioLine("$m minutes", !custom && current == m) { onPick(m) }
-                }
+    val value = text.toIntOrNull()
+    val valid = value != null && value in 1..720
+    val focus = remember { FocusRequester() }
+
+    LaunchedEffect(custom) {
+        if (custom) { delay(120); runCatching { focus.requestFocus() } }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+            Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 22.dp, bottom = 6.dp)) {
+                Text(title, fontSize = 22.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp))
+                Spacer(Modifier.height(8.dp))
+                presets.forEach { m -> RadioLine("$m minutes", !custom && current == m) { onPick(m) } }
                 RadioLine("Custom", custom) { custom = true }
-                if (custom) {
+                AnimatedVisibility(custom, enter = expandVertically(tween(200)) + fadeIn(), exit = shrinkVertically(tween(150)) + fadeOut()) {
                     OutlinedTextField(
                         value = text,
                         onValueChange = { text = it.filter(Char::isDigit).take(3) },
                         suffix = { Text("min") },
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        isError = text.isNotEmpty() && !valid,
+                        supportingText = { Text("1 to 720 minutes") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { if (valid) onPick(value!!) }),
+                        modifier = Modifier.padding(horizontal = 12.dp).padding(top = 4.dp).fillMaxWidth().focusRequester(focus),
                     )
                 }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    if (custom) TextButton(onClick = { onPick(value!!) }, enabled = valid) { Text("Set") }
+                }
             }
-        },
-        confirmButton = {
-            if (custom) TextButton(onClick = { text.toIntOrNull()?.takeIf { it in 1..720 }?.let(onPick) }) { Text("Set") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+        }
+    }
 }
 
 @Composable
 private fun RadioLine(label: String, selected: Boolean, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
-        RadioButton(selected = selected, onClick = onClick)
-        Text(label)
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Spacer(Modifier.width(14.dp))
+        Text(label, fontSize = 16.sp)
     }
 }

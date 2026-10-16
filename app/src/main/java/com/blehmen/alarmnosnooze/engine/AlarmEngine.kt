@@ -97,7 +97,10 @@ class AlarmEngine(
         dao.deleteById(id)
     }
 
-    suspend fun saveOrder(ids: List<Int>) { ids.forEachIndexed { i, id -> dao.setOrder(id, i) } }
+    suspend fun saveOrder(ids: List<Int>) {
+        val byId = dao.getAll().associateBy { it.id }
+        dao.updateAll(ids.mapIndexedNotNull { i, id -> byId[id]?.copy(sortOrder = i) })
+    }
 
     suspend fun setPinned(id: Int, pinned: Boolean) {
         val a = dao.get(id) ?: return
