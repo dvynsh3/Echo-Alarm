@@ -309,19 +309,13 @@ private fun AlarmCard(
         shadowElevation = elevation,
     ) {
         Box {
-            // Small curved accent tab on the left edge while the alarm is on.
+            // Accent edge on the left while the alarm is on: full height, curving with the card corners.
             AnimatedVisibility(
                 visible = alarm.enabled,
-                modifier = Modifier.align(Alignment.CenterStart),
-                enter = fadeIn(tween(220)) + scaleIn(tween(220), initialScale = 0.3f, transformOrigin = TransformOrigin(0f, 0.5f)),
-                exit = fadeOut(tween(160)) + scaleOut(tween(160), targetScale = 0.3f, transformOrigin = TransformOrigin(0f, 0.5f)),
-            ) {
-                Box(
-                    Modifier.width(6.dp).height(56.dp)
-                        .clip(RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp))
-                        .background(MaterialTheme.colorScheme.primary)
-                )
-            }
+                modifier = Modifier.matchParentSize(),
+                enter = fadeIn(tween(250)),
+                exit = fadeOut(tween(200)),
+            ) { AccentEdge(MaterialTheme.colorScheme.surface, Modifier.fillMaxSize()) }
             Row(
                 Modifier.padding(start = 24.dp, end = 14.dp, top = 18.dp, bottom = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,

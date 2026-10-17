@@ -15,7 +15,7 @@ Alarms, Stopwatch, Timer (bottom bar, three items). Settings is the gear in the 
 - Edit mode buttons per card: Pin, Duplicate, Delete, Reorder. Duplicate keeps every setting and renames the copy
   "Name (2)", then "Name (3)" and so on, placing it right after the original.
 - Settings > Warning before deletion (off by default) asks for confirmation before any trash button deletes an alarm.
-- A small accent-coloured tab on the left edge of a card means that alarm is on.
+- An accent edge on the left of a card, full height and curving with the card corners, means that alarm is on.
 - In the alarm editor the bottom row is: Delete (red circle, existing alarms only), Save (accent pill), Cancel (X circle). In edit mode, tapping a card does nothing.
 
 ## Behaviour notes
@@ -28,7 +28,7 @@ Alarms, Stopwatch, Timer (bottom bar, three items). Settings is the gear in the 
 
 ## Lock-screen ringing
 Turn off and Silence are swipes: the X stays put and a translucent circle follows your finger, growing as you pull;
-let go past the threshold to fire. At rest the circle breathes behind the X and the X shakes now and then, pausing
+let go past the threshold to fire. At rest the circle slowly breathes out from behind the X (1 s out, 2 s hold, 1 s back, 2 s hidden), pausing
 while you touch and resuming about 2 seconds after you let go. Snooze stays a tap. The notification also has plain buttons as a fallback.
 
 The ringing screen opens through a full-screen notification, plus a screen wake lock and a direct launch attempt.

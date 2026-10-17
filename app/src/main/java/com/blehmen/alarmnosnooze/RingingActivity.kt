@@ -12,6 +12,7 @@ import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -143,8 +144,8 @@ private fun RingingScreen(accent: Color, onFinish: () -> Unit) {
 
 /**
  * The X button never moves. A translucent circle sits behind it and follows your finger, growing as you pull.
- * Idle, that circle breathes in and out from behind the button and the button gives a small shake now and then,
- * both pausing while you touch and resuming a couple of seconds after you let go.
+ * Idle, that circle slowly breathes out from behind the button, holds for 2 seconds, tucks back in and rests hidden for 2 seconds. The breathing
+ * pauses while you touch and resumes a couple of seconds after you let go.
  * Release past the threshold and the circle floods the screen and fires the action; otherwise it springs back.
  */
 @Composable
@@ -159,12 +160,10 @@ private fun SwipeAction(icon: ImageVector, hint: String, onTrigger: () -> Unit) 
     val idleExtraPx = with(density) { 30.dp.toPx() }
     val grabExtraPx = with(density) { 26.dp.toPx() }
     val floodRadius = with(density) { 900.dp.toPx() }
-    val shakePx = with(density) { 9.dp.toPx() }
 
     var pull by remember { mutableStateOf(Offset.Zero) }       // where the finger has taken the circle
     val follow = remember { Animatable(1f) }                    // 1 = under the finger, 0 = back home
     val flood = remember { Animatable(0f) }                     // 0 -> 1 when the action fires
-    val shake = remember { Animatable(0f) }
     var touched by remember { mutableStateOf(false) }
     var idle by remember { mutableStateOf(true) }
     var fired by remember { mutableStateOf(false) }
@@ -174,20 +173,21 @@ private fun SwipeAction(icon: ImageVector, hint: String, onTrigger: () -> Unit) 
     val pulseTransition = rememberInfiniteTransition(label = "pulse")
     val pulse by pulseTransition.animateFloat(
         initialValue = 0f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        animationSpec = infiniteRepeatable(
+            animation = keyframes<Float> {
+                durationMillis = 6000
+                0f at 0 using FastOutSlowInEasing      // grows out from behind the button
+                1f at 1000                              // fully out...
+                1f at 3000 using FastOutSlowInEasing   // ...held for 2 seconds, then back in
+                0f at 4000                              // hidden behind the button...
+                0f at 6000                              // ...for 2 seconds before the next breath
+            },
+            repeatMode = RepeatMode.Restart,
+        ),
         label = "pulse",
     )
     val amp by animateFloatAsState(if (idle) 1f else 0f, tween(350), label = "amp")
     val grab by animateFloatAsState(if (touched) 1f else 0f, tween(200), label = "grab")
-
-    // Occasional shake of the X button while untouched.
-    LaunchedEffect(idle) {
-        if (!idle) { shake.snapTo(0f); return@LaunchedEffect }
-        while (true) {
-            delay(4200)
-            for (v in listOf(-1f, 1f, -0.8f, 0.8f, -0.4f, 0f)) shake.animateTo(v, tween(70))
-        }
-    }
 
     val shown = pull * follow.value
     val dist = shown.getDistance()
@@ -221,8 +221,9 @@ private fun SwipeAction(icon: ImageVector, hint: String, onTrigger: () -> Unit) 
                         scope.launch { follow.snapTo(1f) }
 
                         val finished = drag(down.id) { change ->
+                            val delta = change.positionChange() // read BEFORE consuming; a consumed change reports zero movement
                             change.consume()
-                            pull += change.positionChange()
+                            pull += delta
                             val nowPast = pull.getDistance() >= thresholdPx
                             if (nowPast && !past) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             past = nowPast
@@ -249,7 +250,6 @@ private fun SwipeAction(icon: ImageVector, hint: String, onTrigger: () -> Unit) 
         ) {
             Box(
                 Modifier
-                    .graphicsLayer { translationX = shake.value * shakePx; rotationZ = shake.value * 6f }
                     .size(buttonSize)
                     .clip(CircleShape)
                     .background(Color.White.copy(alpha = 0.28f)),
