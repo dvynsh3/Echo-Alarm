@@ -62,6 +62,9 @@ class ToggleAlarmCallback : ActionCallback {
         val id = parameters[WidgetKeys.AlarmId] ?: return
         val a = context.app.db.alarmDao().get(id) ?: return
         context.app.engine.setEnabled(id, !a.enabled)
+        if (!a.enabled) context.app.db.alarmDao().get(id)?.let {
+            if (it.enabled) com.blehmen.alarmnosnooze.engine.announceAlarmSet(context, it.nextTriggerAt - System.currentTimeMillis())
+        }
     }
 }
 

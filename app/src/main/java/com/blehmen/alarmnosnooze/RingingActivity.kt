@@ -143,7 +143,7 @@ private fun RingingScreen(accent: Color, onFinish: () -> Unit) {
 }
 
 /**
- * The X button never moves. A translucent circle sits behind it and follows your finger, growing as you pull.
+ * The X button never moves. A translucent circle sits behind it, centred on it, and its edge grows outward as you pull.
  * Idle, that circle slowly breathes out from behind the button, holds for 2 seconds, tucks back in and rests hidden for 2 seconds. The breathing
  * pauses while you touch and resumes a couple of seconds after you let go.
  * Release past the threshold and the circle floods the screen and fires the action; otherwise it springs back.
@@ -158,7 +158,6 @@ private fun SwipeAction(icon: ImageVector, hint: String, onTrigger: () -> Unit) 
     val buttonRadius = with(density) { (buttonSize / 2).toPx() }
     val thresholdPx = with(density) { 120.dp.toPx() }
     val idleExtraPx = with(density) { 30.dp.toPx() }
-    val grabExtraPx = with(density) { 26.dp.toPx() }
     val floodRadius = with(density) { 900.dp.toPx() }
 
     var pull by remember { mutableStateOf(Offset.Zero) }       // where the finger has taken the circle
@@ -170,24 +169,20 @@ private fun SwipeAction(icon: ImageVector, hint: String, onTrigger: () -> Unit) 
     var past by remember { mutableStateOf(false) }
     val idleJob = remember { arrayOfNulls<Job>(1) }
 
-    val pulseTransition = rememberInfiniteTransition(label = "pulse")
-    val pulse by pulseTransition.animateFloat(
-        initialValue = 0f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = keyframes<Float> {
-                durationMillis = 6000
-                0f at 0 using FastOutSlowInEasing      // grows out from behind the button
-                1f at 1000                              // fully out...
-                1f at 3000 using FastOutSlowInEasing   // ...held for 2 seconds, then back in
-                0f at 4000                              // hidden behind the button...
-                0f at 6000                              // ...for 2 seconds before the next breath
-            },
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "pulse",
-    )
-    val amp by animateFloatAsState(if (idle) 1f else 0f, tween(350), label = "amp")
+    val pulse = remember { Animatable(0f) }   // 0 = hidden behind the button, 1 = fully out
     val grab by animateFloatAsState(if (touched) 1f else 0f, tween(200), label = "grab")
+
+    // Out 1 s, hold 2 s, back in 1 s, rest hidden 2 s. Every time it (re)starts it begins hidden behind the X.
+    LaunchedEffect(idle) {
+        if (!idle) { pulse.animateTo(0f, tween(200)); return@LaunchedEffect }
+        while (true) {
+            pulse.animateTo(1f, tween(1000, easing = FastOutSlowInEasing))
+            delay(2000)
+            pulse.animateTo(0f, tween(1000, easing = FastOutSlowInEasing))
+            delay(2000)
+        }
+    }
+
 
     val shown = pull * follow.value
     val dist = shown.getDistance()
@@ -198,16 +193,14 @@ private fun SwipeAction(icon: ImageVector, hint: String, onTrigger: () -> Unit) 
             Modifier
                 .size(buttonSize + 40.dp)
                 .drawBehind {
-                    val radius = lerp(
-                        buttonRadius * 0.9f + idleExtraPx * pulse * amp + (grabExtraPx + dist * 0.8f) * grab,
-                        floodRadius,
-                        flood.value,
-                    )
+                    val idleRadius = buttonRadius * 0.9f + idleExtraPx * pulse.value
+                    val dragRadius = buttonRadius + dist          // edge follows how far the finger has gone
+                    val radius = lerp(lerp(idleRadius, dragRadius, grab), floodRadius, flood.value)
                     val alpha = (0.18f + 0.28f * progress + 0.30f * flood.value).coerceAtMost(0.8f)
                     // Never painted over the button itself, so at rest the circle is hidden "behind" it.
                     val button = Path().apply { addOval(Rect(center, buttonRadius)) }
                     clipPath(button, ClipOp.Difference) {
-                        drawCircle(Color.White.copy(alpha = alpha), radius = radius, center = center + shown)
+                        drawCircle(Color.White.copy(alpha = alpha), radius = radius, center = center)
                     }
                 }
                 .pointerInput(Unit) {

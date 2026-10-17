@@ -14,6 +14,7 @@ import com.blehmen.alarmnosnooze.data.AppSettings
 import com.blehmen.alarmnosnooze.data.Backup
 import com.blehmen.alarmnosnooze.data.Phase
 import com.blehmen.alarmnosnooze.data.StopwatchState
+import com.blehmen.alarmnosnooze.engine.announceAlarmSet
 import com.blehmen.alarmnosnooze.data.TimerState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -42,11 +43,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var newAlarmRequest by mutableStateOf(false)
 
     // ---- alarms
-    fun toggle(a: Alarm, on: Boolean) = viewModelScope.launch { app.engine.setEnabled(a.id, on) }
+    fun toggle(a: Alarm, on: Boolean) = viewModelScope.launch {
+        app.engine.setEnabled(a.id, on)
+        if (on) announce(a.id)
+    }
     fun delete(a: Alarm) = viewModelScope.launch { app.engine.delete(a.id) }
     fun togglePin(a: Alarm) = viewModelScope.launch { app.engine.setPinned(a.id, !a.pinned) }
     fun saveOrder(list: List<Alarm>) = viewModelScope.launch { app.engine.saveOrder(list.map { it.id }) }
-    fun save(a: Alarm) = viewModelScope.launch { app.engine.save(a) }
+    fun save(a: Alarm) = viewModelScope.launch { announce(app.engine.save(a)) }
+
+    /** Toast: "Alarm set for 2 hours and 3 minutes from now". */
+    private suspend fun announce(id: Int) {
+        val u = app.db.alarmDao().get(id) ?: return
+        if (u.enabled) announceAlarmSet(app, u.nextTriggerAt - System.currentTimeMillis())
+    }
     fun duplicate(a: Alarm) = viewModelScope.launch { app.engine.duplicate(a.id) }
 
     /** New alarm with the user's default sound, volume and ramp from Settings. */

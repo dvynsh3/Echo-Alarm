@@ -27,7 +27,7 @@ Alarms, Stopwatch, Timer (bottom bar, three items). Settings is the gear in the 
 - The alarm widget's + opens the normal new-alarm editor. There is no separate quick-alarm feature any more.
 
 ## Lock-screen ringing
-Turn off and Silence are swipes: the X stays put and a translucent circle follows your finger, growing as you pull;
+Turn off and Silence are swipes: the X stays put and a translucent circle stays centred on it, growing outward as you pull;
 let go past the threshold to fire. At rest the circle slowly breathes out from behind the X (1 s out, 2 s hold, 1 s back, 2 s hidden), pausing
 while you touch and resuming about 2 seconds after you let go. Snooze stays a tap. The notification also has plain buttons as a fallback.
 
@@ -41,7 +41,9 @@ Settings > Reliability checklist has the same shortcut.
   when expanded. Switch it off in Settings.
 - Upcoming alarm notice, 15 minutes before every enabled alarm (any snooze/repeat mode): name and time as the heading,
   a live countdown clock, and "<name> rings in N mins" when expanded (refreshed each minute, best effort in Doze).
-  Swiping it away stops the refreshes. Switch it off in Settings.
+  It has Turn off (switches the alarm off) and Snooze 5 mins (moves the alarm itself 5 minutes later and refreshes the
+  notice immediately). Swiping it away stops the refreshes. Switch it off in Settings.
+- A toast says "Alarm set for 2 hours and 3 minutes from now" whenever an alarm is saved or switched on.
 
 ## Timer, stopwatch, widgets, backup
 - Timer: wheels, 3 editable presets (long-press), pause/resume/cancel, +1:00, rings with the alarm sound, survives reboot.

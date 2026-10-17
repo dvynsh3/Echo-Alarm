@@ -177,6 +177,9 @@ fun AlarmsScreen(
         nextMs == null -> "All alarms are off"
         else -> "Alarm in ${durationText(nextMs - now)}"
     }
+    // Only animate when the kind of message changes. Minute-by-minute updates swap the text in place; cross-fading
+    // those is what made the banner dip to black every time it refreshed.
+    val headlineKind = when { editMode -> 0; nextMs == null -> 1; else -> 2 }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -185,11 +188,11 @@ fun AlarmsScreen(
             }
             Box(Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
                 AnimatedContent(
-                    targetState = headline,
+                    targetState = headlineKind,
                     transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
                     label = "headline",
-                ) { text ->
-                    Text(text, fontSize = 28.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onBackground)
+                ) { _ ->
+                    Text(headline, fontSize = 28.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onBackground)
                 }
             }
             LazyColumn(
@@ -202,7 +205,7 @@ fun AlarmsScreen(
                 item(key = "actions") {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = onAdd) {
-                            Icon(Icons.Filled.Add, "Add alarm", tint = MaterialTheme.colorScheme.primary)
+                            Icon(Icons.Filled.Add, "Add alarm", tint = MaterialTheme.colorScheme.onBackground)
                         }
                         IconButton(onClick = { editMode = !editMode }) {
                             AnimatedContent(
@@ -213,7 +216,7 @@ fun AlarmsScreen(
                                 Icon(
                                     if (e) Icons.Filled.Check else Icons.Outlined.Edit,
                                     if (e) "Done editing" else "Edit alarms",
-                                    tint = MaterialTheme.colorScheme.primary,
+                                    tint = MaterialTheme.colorScheme.onBackground,
                                 )
                             }
                         }

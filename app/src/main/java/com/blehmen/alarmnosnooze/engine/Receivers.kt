@@ -15,6 +15,16 @@ class AlarmReceiver : BroadcastReceiver() {
         val id = intent.getIntExtra(AlarmEngine.EXTRA_ID, -1)
         when (intent.action) {
             AlarmEngine.ACTION_UPCOMING_DISMISS -> context.app.engine.dismissUpcoming(id)
+            AlarmEngine.ACTION_UPCOMING_OFF, AlarmEngine.ACTION_UPCOMING_SNOOZE -> {
+                val action = intent.action
+                val pending = goAsync()
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        if (action == AlarmEngine.ACTION_UPCOMING_OFF) context.app.engine.setEnabled(id, false)
+                        else context.app.engine.shiftLater(id, AlarmEngine.UPCOMING_SNOOZE_MINUTES)
+                    } finally { pending.finish() }
+                }
+            }
             AlarmEngine.ACTION_FIRE -> {
                 val kind = intent.getIntExtra(AlarmEngine.EXTRA_KIND, AlarmEngine.REGULAR)
                 if (kind == AlarmEngine.UPCOMING) {

@@ -147,9 +147,17 @@ object Notifier {
             .setOnlyAlertOnce(true)
             .setContentIntent(openApp(ctx))
             .setDeleteIntent(dismiss)
+            .addAction(Notification.Action.Builder(null, "Turn off", noticeAction(ctx, AlarmEngine.ACTION_UPCOMING_OFF, a.id, 410000)).build())
+            .addAction(Notification.Action.Builder(null, "Snooze 5 mins", noticeAction(ctx, AlarmEngine.ACTION_UPCOMING_SNOOZE, a.id, 420000)).build())
             .build()
         ctx.getSystemService(NotificationManager::class.java).notify(50000 + a.id, n)
     }
+
+    private fun noticeAction(ctx: Context, action: String, id: Int, base: Int) = PendingIntent.getBroadcast(
+        ctx, base + id,
+        Intent(ctx, AlarmReceiver::class.java).setAction(action).putExtra(AlarmEngine.EXTRA_ID, id),
+        immutable()
+    )
 
     fun cancelUpcoming(ctx: Context, id: Int) {
         ctx.getSystemService(NotificationManager::class.java).cancel(50000 + id)

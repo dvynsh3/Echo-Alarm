@@ -29,6 +29,9 @@ class AlarmEngine(
         const val UPCOMING = 2
         const val UPCOMING_LEAD_MS = 15 * 60_000L
         const val ACTION_UPCOMING_DISMISS = "com.blehmen.alarmnosnooze.UPCOMING_DISMISS"
+        const val ACTION_UPCOMING_OFF = "com.blehmen.alarmnosnooze.UPCOMING_OFF"
+        const val ACTION_UPCOMING_SNOOZE = "com.blehmen.alarmnosnooze.UPCOMING_SNOOZE"
+        const val UPCOMING_SNOOZE_MINUTES = 5
         const val ACTION_FIRE = "com.blehmen.alarmnosnooze.FIRE"
         const val EXTRA_ID = "alarm_id"
         const val EXTRA_KIND = "kind"
@@ -242,6 +245,19 @@ class AlarmEngine(
         // Refresh the "in N mins" wording each minute. The countdown clock in the notification is live regardless.
         val nextTick = now() + 60_000 - (now() % 60_000)
         if (nextTick < a.nextTriggerAt) armExact(a.id, UPCOMING, nextTick)
+    }
+
+    /**
+     * "Snooze 5 mins" on the upcoming notice: moves the alarm itself later (its time in the app changes) and
+     * immediately refreshes the notice with the new time and countdown, even if that is now more than 15 minutes away.
+     */
+    suspend fun shiftLater(id: Int, minutes: Int) {
+        val a = dao.get(id) ?: return
+        if (!a.enabled) return
+        val total = a.hour * 60 + a.minute + minutes
+        val u = scheduleRegular(a.copy(hour = (total / 60) % 24, minute = total % 60))
+        if (settings.current().upcomingNotice) postUpcoming(u)
+        announceAlarmSet(ctx, u.nextTriggerAt - now())
     }
 
     suspend fun onUpcoming(id: Int) {

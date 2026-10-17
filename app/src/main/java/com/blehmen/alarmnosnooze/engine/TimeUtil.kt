@@ -1,5 +1,9 @@
 package com.blehmen.alarmnosnooze.engine
 
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
 import com.blehmen.alarmnosnooze.data.Alarm
 import java.time.Instant
 import java.time.ZoneId
@@ -47,4 +51,27 @@ fun fmtStopwatch(ms: Long): String {
     val m = (v / 60_000) % 60
     val h = v / 3_600_000
     return if (h > 0) "%d:%02d:%02d.%02d".format(h, m, s, cs) else "%02d:%02d.%02d".format(m, s, cs)
+}
+
+/** "2 hours and 3 minutes", "1 day, 2 hours and 5 minutes", "45 minutes". Rounds up so it never says 0. */
+fun toastDuration(ms: Long): String {
+    val mins = ((ms + 59_999) / 60_000).coerceAtLeast(1)
+    val d = mins / 1440
+    val h = (mins % 1440) / 60
+    val m = mins % 60
+    fun u(n: Long, s: String) = "$n $s" + if (n == 1L) "" else "s"
+    val parts = buildList {
+        if (d > 0) add(u(d, "day"))
+        if (h > 0) add(u(h, "hour"))
+        if (m > 0) add(u(m, "minute"))
+    }
+    return if (parts.size == 1) parts[0] else parts.dropLast(1).joinToString(", ") + " and " + parts.last()
+}
+
+/** Safe to call from any thread. */
+fun announceAlarmSet(ctx: Context, msUntil: Long) {
+    if (msUntil <= 0) return
+    Handler(Looper.getMainLooper()).post {
+        Toast.makeText(ctx.applicationContext, "Alarm set for ${toastDuration(msUntil)} from now", Toast.LENGTH_SHORT).show()
+    }
 }
