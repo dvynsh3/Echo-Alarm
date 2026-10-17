@@ -10,6 +10,7 @@ import com.blehmen.alarmnosnooze.data.AppDatabase
 import com.blehmen.alarmnosnooze.data.SettingsRepo
 import com.blehmen.alarmnosnooze.data.TimerRepo
 import com.blehmen.alarmnosnooze.engine.AlarmEngine
+import com.blehmen.alarmnosnooze.engine.BedtimeReminder
 import com.blehmen.alarmnosnooze.engine.Notifier
 import com.blehmen.alarmnosnooze.engine.StopwatchEngine
 import com.blehmen.alarmnosnooze.engine.TimerEngine
@@ -44,6 +45,7 @@ class AlarmApp : Application() {
         super.onCreate()
         Notifier.createChannels(this)
         TimerNotifier.createChannels(this)
+        BedtimeReminder.schedule(this)
         observeForWidgets()
     }
 

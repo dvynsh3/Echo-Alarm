@@ -47,6 +47,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun togglePin(a: Alarm) = viewModelScope.launch { app.engine.setPinned(a.id, !a.pinned) }
     fun saveOrder(list: List<Alarm>) = viewModelScope.launch { app.engine.saveOrder(list.map { it.id }) }
     fun save(a: Alarm) = viewModelScope.launch { app.engine.save(a) }
+    fun duplicate(a: Alarm) = viewModelScope.launch { app.engine.duplicate(a.id) }
 
     /** New alarm with the user's default sound, volume and ramp from Settings. */
     private fun newAlarm(h: Int, m: Int): Alarm {
@@ -64,6 +65,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setAccent(v: Int) = viewModelScope.launch { app.settings.setAccent(v) }
     fun setMaxRepeats(v: Int) = viewModelScope.launch { app.settings.setMaxRepeats(v) }
     fun setResume(v: Boolean) = viewModelScope.launch { app.settings.setResume(v) }
+    fun setConfirmDelete(v: Boolean) = viewModelScope.launch { app.settings.setConfirmDelete(v) }
+    fun setBedtimeReminder(v: Boolean) = viewModelScope.launch { app.settings.setBedtimeReminder(v) }
+    fun setUpcomingNotice(v: Boolean) = viewModelScope.launch {
+        app.settings.setUpcomingNotice(v)
+        app.engine.rescheduleAll() // arms or clears the 15-minute notices
+    }
     fun setDefaultSound(v: String?) = viewModelScope.launch { app.settings.setDefaultSound(v) }
     fun setDefaultVolume(v: Int) = viewModelScope.launch { app.settings.setDefaultVolume(v) }
     fun setDefaultRamp(v: Boolean) = viewModelScope.launch { app.settings.setDefaultRamp(v) }

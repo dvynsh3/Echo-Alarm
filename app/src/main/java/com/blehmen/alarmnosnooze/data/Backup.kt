@@ -26,6 +26,9 @@ object Backup {
             put("defaultVolume", s.defaultVolume)
             put("defaultRampEnabled", s.defaultRampEnabled)
             put("defaultRampSeconds", s.defaultRampSeconds)
+            put("confirmDelete", s.confirmDelete)
+            put("bedtimeReminder", s.bedtimeReminder)
+            put("upcomingNotice", s.upcomingNotice)
         })
 
         root.put("timerPresets", JSONArray(app.timerRepo.timerNow().presets))
@@ -97,6 +100,9 @@ object Backup {
             if (st.has("defaultVolume")) repo.setDefaultVolume(st.getInt("defaultVolume").coerceIn(5, 100))
             if (st.has("defaultRampEnabled")) repo.setDefaultRamp(st.getBoolean("defaultRampEnabled"))
             if (st.has("defaultRampSeconds")) repo.setDefaultRampSeconds(st.getInt("defaultRampSeconds").coerceIn(5, 120))
+            if (st.has("confirmDelete")) repo.setConfirmDelete(st.getBoolean("confirmDelete"))
+            if (st.has("bedtimeReminder")) repo.setBedtimeReminder(st.getBoolean("bedtimeReminder"))
+            if (st.has("upcomingNotice")) repo.setUpcomingNotice(st.getBoolean("upcomingNotice"))
         }
         if (!presets.isNullOrEmpty()) app.timerRepo.setPresets(presets)
 

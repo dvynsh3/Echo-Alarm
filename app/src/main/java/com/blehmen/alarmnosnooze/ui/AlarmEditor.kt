@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -58,11 +59,13 @@ fun AlarmEditorScreen(
     onSave: (Alarm) -> Unit,
     onCancel: () -> Unit,
     onDelete: () -> Unit,
+    confirmDelete: Boolean = false,
 ) {
     val ctx = LocalContext.current
     val is24 = remember { DateFormat.is24HourFormat(ctx) }
     var a by remember { mutableStateOf(initial) }
     var dialog by remember { mutableStateOf<EditorDialog?>(null) }
+    var confirmingDelete by remember { mutableStateOf(false) }
 
     val soundName = remember(a.soundUri) {
         val uri = a.soundUri?.let { Uri.parse(it) } ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
@@ -167,7 +170,7 @@ fun AlarmEditorScreen(
         ) {
             if (!isNew) {
                 Surface(
-                    onClick = onDelete,
+                    onClick = { if (confirmDelete) confirmingDelete = true else onDelete() },
                     modifier = Modifier.size(48.dp),
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.errorContainer,
@@ -177,14 +180,34 @@ fun AlarmEditorScreen(
                     }
                 }
             }
-            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onCancel, modifier = Modifier.width(120.dp)) { Text("Cancel", fontWeight = FontWeight.Bold) }
-                    Box(Modifier.width(1.dp).height(28.dp).background(MaterialTheme.colorScheme.outline))
-                    TextButton(onClick = { onSave(a) }, modifier = Modifier.width(120.dp)) { Text("Save", fontWeight = FontWeight.Bold) }
+            Surface(
+                onClick = { onSave(a) },
+                modifier = Modifier.height(48.dp).width(150.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primary,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text("Save", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+            }
+            Surface(
+                onClick = onCancel,
+                modifier = Modifier.size(48.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.Close, "Cancel", tint = MaterialTheme.colorScheme.primary)
                 }
             }
         }
+    }
+
+    if (confirmingDelete) {
+        ConfirmDeleteDialog(
+            onCancel = { confirmingDelete = false },
+            onConfirm = { confirmingDelete = false; onDelete() },
+        )
     }
 
     when (dialog) {

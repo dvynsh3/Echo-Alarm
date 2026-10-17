@@ -7,11 +7,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -24,6 +32,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -41,6 +55,7 @@ import androidx.compose.ui.util.lerp
 import com.blehmen.alarmnosnooze.data.AppSettings
 import com.blehmen.alarmnosnooze.service.AlarmService
 import com.blehmen.alarmnosnooze.ui.AppTheme
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -127,8 +142,10 @@ private fun RingingScreen(accent: Color, onFinish: () -> Unit) {
 }
 
 /**
- * Drag the button in any direction. A translucent circle grows behind it as you pull, and letting go
- * past the threshold floods the screen and fires the action. Let go early and it springs back.
+ * The X button never moves. A translucent circle sits behind it and follows your finger, growing as you pull.
+ * Idle, that circle breathes in and out from behind the button and the button gives a small shake now and then,
+ * both pausing while you touch and resuming a couple of seconds after you let go.
+ * Release past the threshold and the circle floods the screen and fires the action; otherwise it springs back.
  */
 @Composable
 private fun SwipeAction(icon: ImageVector, hint: String, onTrigger: () -> Unit) {
@@ -137,77 +154,105 @@ private fun SwipeAction(icon: ImageVector, hint: String, onTrigger: () -> Unit) 
     val scope = rememberCoroutineScope()
 
     val buttonSize = 104.dp
+    val buttonRadius = with(density) { (buttonSize / 2).toPx() }
     val thresholdPx = with(density) { 120.dp.toPx() }
-    val restRadius = with(density) { (buttonSize / 2 + 16.dp).toPx() }
-    val floodRadius = with(density) { 800.dp.toPx() }
+    val idleExtraPx = with(density) { 30.dp.toPx() }
+    val grabExtraPx = with(density) { 26.dp.toPx() }
+    val floodRadius = with(density) { 900.dp.toPx() }
+    val shakePx = with(density) { 9.dp.toPx() }
 
-    var drag by remember { mutableStateOf(Offset.Zero) }
-    val follow = remember { Animatable(1f) }   // 1 = under the finger, 0 = back at rest
-    val flood = remember { Animatable(0f) }    // 0 -> 1 when the action fires
+    var pull by remember { mutableStateOf(Offset.Zero) }       // where the finger has taken the circle
+    val follow = remember { Animatable(1f) }                    // 1 = under the finger, 0 = back home
+    val flood = remember { Animatable(0f) }                     // 0 -> 1 when the action fires
+    val shake = remember { Animatable(0f) }
+    var touched by remember { mutableStateOf(false) }
+    var idle by remember { mutableStateOf(true) }
     var fired by remember { mutableStateOf(false) }
-    var pastThreshold by remember { mutableStateOf(false) }
+    var past by remember { mutableStateOf(false) }
+    val idleJob = remember { arrayOfNulls<Job>(1) }
 
-    val shown = drag * follow.value
-    val dist = shown.getDistance()
-    val progress = (dist / thresholdPx).coerceIn(0f, 1f)
+    val pulseTransition = rememberInfiniteTransition(label = "pulse")
+    val pulse by pulseTransition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "pulse",
+    )
+    val amp by animateFloatAsState(if (idle) 1f else 0f, tween(350), label = "amp")
+    val grab by animateFloatAsState(if (touched) 1f else 0f, tween(200), label = "grab")
 
-    fun springBack() {
-        scope.launch {
-            follow.animateTo(0f, spring(dampingRatio = 0.65f, stiffness = 300f))
-            drag = Offset.Zero
-            follow.snapTo(1f)
-            pastThreshold = false
+    // Occasional shake of the X button while untouched.
+    LaunchedEffect(idle) {
+        if (!idle) { shake.snapTo(0f); return@LaunchedEffect }
+        while (true) {
+            delay(4200)
+            for (v in listOf(-1f, 1f, -0.8f, 0.8f, -0.4f, 0f)) shake.animateTo(v, tween(70))
         }
     }
+
+    val shown = pull * follow.value
+    val dist = shown.getDistance()
+    val progress = (dist / thresholdPx).coerceIn(0f, 1f)
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier
-                .size(buttonSize + 32.dp)
+                .size(buttonSize + 40.dp)
                 .drawBehind {
-                    val radius = lerp(restRadius + dist, floodRadius, flood.value)
-                    val alpha = (0.16f + 0.30f * progress + 0.30f * flood.value).coerceAtMost(0.8f)
-                    drawCircle(Color.White.copy(alpha = alpha), radius = radius)
+                    val radius = lerp(
+                        buttonRadius * 0.9f + idleExtraPx * pulse * amp + (grabExtraPx + dist * 0.8f) * grab,
+                        floodRadius,
+                        flood.value,
+                    )
+                    val alpha = (0.18f + 0.28f * progress + 0.30f * flood.value).coerceAtMost(0.8f)
+                    // Never painted over the button itself, so at rest the circle is hidden "behind" it.
+                    val button = Path().apply { addOval(Rect(center, buttonRadius)) }
+                    clipPath(button, ClipOp.Difference) {
+                        drawCircle(Color.White.copy(alpha = alpha), radius = radius, center = center + shown)
+                    }
                 }
                 .pointerInput(Unit) {
-                    detectDragGestures(
-                        onDragStart = {
-                            if (!fired) {
-                                drag = drag * follow.value // pick up from wherever it currently is
-                                scope.launch { follow.snapTo(1f) }
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        if (fired) return@awaitEachGesture
+                        idleJob[0]?.cancel()
+                        touched = true
+                        idle = false
+                        pull = pull * follow.value        // pick up from wherever it currently is
+                        scope.launch { follow.snapTo(1f) }
+
+                        val finished = drag(down.id) { change ->
+                            change.consume()
+                            pull += change.positionChange()
+                            val nowPast = pull.getDistance() >= thresholdPx
+                            if (nowPast && !past) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            past = nowPast
+                        }
+                        touched = false
+                        if (finished && pull.getDistance() >= thresholdPx) {
+                            fired = true
+                            scope.launch {
+                                flood.animateTo(1f, tween(240))
+                                onTrigger()
                             }
-                        },
-                        onDragEnd = {
-                            if (!fired) {
-                                if (drag.getDistance() >= thresholdPx) {
-                                    fired = true
-                                    scope.launch {
-                                        flood.animateTo(1f, tween(240))
-                                        onTrigger()
-                                    }
-                                } else springBack()
+                        } else {
+                            scope.launch {
+                                follow.animateTo(0f, spring(dampingRatio = 0.65f, stiffness = 300f))
+                                pull = Offset.Zero
+                                follow.snapTo(1f)
+                                past = false
                             }
-                        },
-                        onDragCancel = { if (!fired) springBack() },
-                        onDrag = { change, amount ->
-                            if (!fired) {
-                                change.consume()
-                                drag += amount
-                                val past = drag.getDistance() >= thresholdPx
-                                if (past && !pastThreshold) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                pastThreshold = past
-                            }
-                        },
-                    )
+                            idleJob[0] = scope.launch { delay(2000); idle = true }
+                        }
+                    }
                 },
             contentAlignment = Alignment.Center,
         ) {
             Box(
                 Modifier
-                    .offset { IntOffset(shown.x.roundToInt(), shown.y.roundToInt()) }
+                    .graphicsLayer { translationX = shake.value * shakePx; rotationZ = shake.value * 6f }
                     .size(buttonSize)
                     .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.28f + 0.2f * progress)),
+                    .background(Color.White.copy(alpha = 0.28f)),
                 contentAlignment = Alignment.Center,
             ) { Icon(icon, hint, tint = Color.White, modifier = Modifier.size(44.dp)) }
         }

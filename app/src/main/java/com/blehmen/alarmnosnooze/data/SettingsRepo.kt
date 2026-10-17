@@ -25,6 +25,9 @@ data class AppSettings(
     val defaultVolume: Int = 80,
     val defaultRampEnabled: Boolean = false,
     val defaultRampSeconds: Int = 30,
+    val confirmDelete: Boolean = false,
+    val bedtimeReminder: Boolean = true,
+    val upcomingNotice: Boolean = true,
 )
 
 class SettingsRepo(private val ctx: Context) {
@@ -37,6 +40,9 @@ class SettingsRepo(private val ctx: Context) {
         val defVolume = intPreferencesKey("def_volume")
         val defRamp = booleanPreferencesKey("def_ramp")
         val defRampSec = intPreferencesKey("def_ramp_seconds")
+        val confirmDelete = booleanPreferencesKey("confirm_delete")
+        val bedtime = booleanPreferencesKey("bedtime_reminder")
+        val upcoming = booleanPreferencesKey("upcoming_notice")
     }
 
     val flow: Flow<AppSettings> = ctx.dataStore.data.map { p ->
@@ -49,6 +55,9 @@ class SettingsRepo(private val ctx: Context) {
             defaultVolume = p[K.defVolume] ?: 80,
             defaultRampEnabled = p[K.defRamp] ?: false,
             defaultRampSeconds = p[K.defRampSec] ?: 30,
+            confirmDelete = p[K.confirmDelete] ?: false,
+            bedtimeReminder = p[K.bedtime] ?: true,
+            upcomingNotice = p[K.upcoming] ?: true,
         )
     }
 
@@ -63,4 +72,7 @@ class SettingsRepo(private val ctx: Context) {
     suspend fun setDefaultVolume(v: Int) { ctx.dataStore.edit { it[K.defVolume] = v } }
     suspend fun setDefaultRamp(v: Boolean) { ctx.dataStore.edit { it[K.defRamp] = v } }
     suspend fun setDefaultRampSeconds(v: Int) { ctx.dataStore.edit { it[K.defRampSec] = v } }
+    suspend fun setConfirmDelete(v: Boolean) { ctx.dataStore.edit { it[K.confirmDelete] = v } }
+    suspend fun setBedtimeReminder(v: Boolean) { ctx.dataStore.edit { it[K.bedtime] = v } }
+    suspend fun setUpcomingNotice(v: Boolean) { ctx.dataStore.edit { it[K.upcoming] = v } }
 }

@@ -15,6 +15,8 @@ object Notifier {
     const val CH_RING = "ring"
     const val CH_INFO = "info"
     const val CH_REPEAT = "repeat"
+    const val CH_UPCOMING = "upcoming"
+    const val CH_BEDTIME = "bedtime"
     const val RING_ID = 1
 
     fun createChannels(ctx: Context) {
@@ -28,6 +30,8 @@ object Notifier {
         )
         nm.createNotificationChannel(NotificationChannel(CH_INFO, "Alarm notices", NotificationManager.IMPORTANCE_DEFAULT))
         nm.createNotificationChannel(NotificationChannel(CH_REPEAT, "Repeating alarms", NotificationManager.IMPORTANCE_LOW))
+        nm.createNotificationChannel(NotificationChannel(CH_UPCOMING, "Upcoming alarms", NotificationManager.IMPORTANCE_LOW))
+        nm.createNotificationChannel(NotificationChannel(CH_BEDTIME, "Bedtime reminder", NotificationManager.IMPORTANCE_DEFAULT))
         nm.deleteNotificationChannel("reminder") // channel from a removed feature
     }
 
@@ -120,5 +124,46 @@ object Notifier {
             .setContentIntent(openApp(ctx))
             .build()
         ctx.getSystemService(NotificationManager::class.java).notify(20000 + id, n)
+    }
+
+    /** Heading shows name and time; the sentence underneath only appears when the notification is expanded. */
+    fun upcoming(ctx: Context, a: Alarm, triggerAt: Long, now: Long) {
+        val mins = ((triggerAt - now + 59_999) / 60_000).toInt().coerceAtLeast(1)
+        val name = title(a)
+        val dismiss = PendingIntent.getBroadcast(
+            ctx, 400000 + a.id,
+            Intent(ctx, AlarmReceiver::class.java).setAction(AlarmEngine.ACTION_UPCOMING_DISMISS)
+                .putExtra(AlarmEngine.EXTRA_ID, a.id),
+            immutable()
+        )
+        val n = Notification.Builder(ctx, CH_UPCOMING)
+            .setSmallIcon(R.drawable.ic_notif)
+            .setContentTitle("$name · ${timeText(ctx, triggerAt)}")
+            .setSubText("Upcoming alarm")
+            .setContentText("")
+            .setStyle(Notification.BigTextStyle().bigText("$name rings in $mins ${if (mins == 1) "min" else "mins"}"))
+            .setCategory(Notification.CATEGORY_STATUS)
+            .setWhen(triggerAt).setShowWhen(true).setUsesChronometer(true).setChronometerCountDown(true)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(openApp(ctx))
+            .setDeleteIntent(dismiss)
+            .build()
+        ctx.getSystemService(NotificationManager::class.java).notify(50000 + a.id, n)
+    }
+
+    fun cancelUpcoming(ctx: Context, id: Int) {
+        ctx.getSystemService(NotificationManager::class.java).cancel(50000 + id)
+    }
+
+    fun bedtime(ctx: Context, heading: String, expanded: String?) {
+        val b = Notification.Builder(ctx, CH_BEDTIME)
+            .setSmallIcon(R.drawable.ic_notif)
+            .setContentTitle(heading)
+            .setSubText("Tomorrow morning")
+            .setCategory(Notification.CATEGORY_REMINDER)
+            .setAutoCancel(true)
+            .setContentIntent(openApp(ctx))
+        if (expanded != null) b.setContentText("").setStyle(Notification.BigTextStyle().bigText(expanded))
+        ctx.getSystemService(NotificationManager::class.java).notify(60001, b.build())
     }
 }

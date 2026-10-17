@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.UnfoldMore
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.PushPin
@@ -87,17 +88,23 @@ fun AlarmsScreen(
     onOpen: (Alarm) -> Unit,
     onAdd: () -> Unit,
     onPin: (Alarm) -> Unit,
+    onDuplicate: (Alarm) -> Unit,
     onDelete: (Alarm) -> Unit,
     onReorder: (List<Alarm>) -> Unit,
     onSettings: () -> Unit,
+    confirmDelete: Boolean = false,
 ) {
     val ctx = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
     val is24 = remember { DateFormat.is24HourFormat(ctx) }
 
-    var list by remember(alarms) { mutableStateOf(alarms) }
+    // While dragging, `dragList` is the working order. Otherwise the database list is shown directly.
+    var dragList by remember { mutableStateOf<List<Alarm>?>(null) }
+    val list = dragList ?: alarms
     val currentList by rememberUpdatedState(list)
+    val onReorderState by rememberUpdatedState(onReorder)
+    var pendingDelete by remember { mutableStateOf<Alarm?>(null) }
     var editMode by remember { mutableStateOf(false) }
 
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -113,9 +120,18 @@ fun AlarmsScreen(
     val edgePx = with(density) { 96.dp.toPx() }
 
     fun endDrag() {
-        if (draggingId != null) onReorder(currentList) // saved the moment you let go
+        if (draggingId != null) onReorderState(currentList) // saved the moment you let go
         draggingId = null
         dragOffset = 0f
+    }
+
+    // Keep the dropped order on screen until the database emits the same order, then hand back to it.
+    LaunchedEffect(alarms, draggingId) {
+        val d = dragList
+        if (draggingId == null && d != null) {
+            if (alarms.map { it.id } == d.map { it.id }) dragList = null
+            else { delay(1500); if (draggingId == null) dragList = null }
+        }
     }
 
     fun dragBy(dy: Float) {
@@ -149,7 +165,7 @@ fun AlarmsScreen(
         val from = l.indexOfFirst { it.id == id }
         val to = l.indexOfFirst { it.id == target.key }
         if (from < 0 || to < 0 || l[from].pinned != l[to].pinned) return // pinned alarms stay above the rest
-        list = l.toMutableList().apply { add(to, removeAt(from)) }
+        dragList = l.toMutableList().apply { add(to, removeAt(from)) }
         val newLayoutOffset = if (to > from) target.offset + target.size - cur.size else target.offset
         dragOffset += cur.offset - newLayoutOffset
     }
@@ -213,7 +229,7 @@ fun AlarmsScreen(
                         modifier = itemMod,
                         handleModifier = Modifier.pointerInput(alarm.id) {
                             detectDragGestures(
-                                onDragStart = { draggingId = alarm.id; dragOffset = 0f },
+                                onDragStart = { dragList = currentList; draggingId = alarm.id; dragOffset = 0f },
                                 onDragEnd = { endDrag() },
                                 onDragCancel = { endDrag() },
                                 onDrag = { change, amount -> change.consume(); dragBy(amount.y) },
@@ -225,7 +241,8 @@ fun AlarmsScreen(
                             if (!editMode) { haptic.performHapticFeedback(HapticFeedbackType.LongPress); editMode = true }
                         },
                         onPin = { onPin(alarm) },
-                        onDelete = { onDelete(alarm) },
+                        onDuplicate = { onDuplicate(alarm) },
+                        onDelete = { if (confirmDelete) pendingDelete = alarm else onDelete(alarm) },
                     )
                 }
             }
@@ -245,6 +262,13 @@ fun AlarmsScreen(
             ) { Icon(Icons.Filled.Add, "Add alarm") }
         }
     }
+
+    pendingDelete?.let { a ->
+        ConfirmDeleteDialog(
+            onCancel = { pendingDelete = null },
+            onConfirm = { pendingDelete = null; onDelete(a) },
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -261,6 +285,7 @@ private fun AlarmCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onPin: () -> Unit,
+    onDuplicate: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val ctx = LocalContext.current
@@ -273,6 +298,7 @@ private fun AlarmCard(
             add("Rings again ${DateFormat.getTimeFormat(ctx).format(Date(alarm.nextAgainAt))}")
     }
     val dim by animateFloatAsState(if (alarm.enabled) 1f else 0.5f, tween(250), label = "dim")
+    val timeSize by animateFloatAsState(if (editMode) 38f else 44f, tween(200), label = "timeSize")
     val elevation by animateDpAsState(if (dragging) 14.dp else 0.dp, label = "lift")
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
 
@@ -309,7 +335,7 @@ private fun AlarmCard(
                         if (alarm.label.isNotBlank()) Text(alarm.label, fontSize = 14.sp, color = muted)
                     }
                     Row(verticalAlignment = Alignment.Bottom) {
-                        Text(time, fontSize = 44.sp, fontWeight = FontWeight.Normal)
+                        Text(time, fontSize = timeSize.sp, fontWeight = FontWeight.Normal)
                         if (ampm.isNotEmpty())
                             Text(ampm, fontSize = 18.sp, modifier = Modifier.padding(start = 6.dp, bottom = 8.dp))
                     }
@@ -324,18 +350,22 @@ private fun AlarmCard(
                 ) { edit ->
                     if (edit) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = onPin, modifier = Modifier.size(38.dp)) {
+                            IconButton(onClick = onPin, modifier = Modifier.size(34.dp)) {
                                 Icon(
                                     if (alarm.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
                                     if (alarm.pinned) "Unpin" else "Pin",
+                                    modifier = Modifier.size(22.dp),
                                     tint = if (alarm.pinned) MaterialTheme.colorScheme.primary else muted,
                                 )
                             }
-                            IconButton(onClick = onDelete, modifier = Modifier.size(38.dp)) {
-                                Icon(Icons.Outlined.Delete, "Delete", tint = muted)
+                            IconButton(onClick = onDuplicate, modifier = Modifier.size(34.dp)) {
+                                Icon(Icons.Outlined.ContentCopy, "Duplicate", modifier = Modifier.size(22.dp), tint = muted)
                             }
-                            Box(handleModifier.size(38.dp), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Filled.UnfoldMore, "Drag to reorder", tint = muted)
+                            IconButton(onClick = onDelete, modifier = Modifier.size(34.dp)) {
+                                Icon(Icons.Outlined.Delete, "Delete", modifier = Modifier.size(22.dp), tint = muted)
+                            }
+                            Box(handleModifier.size(34.dp), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Filled.UnfoldMore, "Drag to reorder", modifier = Modifier.size(22.dp), tint = muted)
                             }
                         }
                     } else {

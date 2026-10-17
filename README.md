@@ -12,8 +12,11 @@ Alarms, Stopwatch, Timer (bottom bar, three items). Settings is the gear in the 
 - **Edit mode** (pencil, or press and hold any alarm): each card shows Pin, Delete and a reorder handle.
   The system Back gesture (or the tick) leaves edit mode. Reordering is saved the moment you drop a card.
   Pinned alarms stay above unpinned ones; use Pin to move an alarm between the two groups.
+- Edit mode buttons per card: Pin, Duplicate, Delete, Reorder. Duplicate keeps every setting and renames the copy
+  "Name (2)", then "Name (3)" and so on, placing it right after the original.
+- Settings > Warning before deletion (off by default) asks for confirmation before any trash button deletes an alarm.
 - A small accent-coloured tab on the left edge of a card means that alarm is on.
-- In the alarm editor, Delete is a red circle to the left of the Cancel | Save pill. In edit mode, tapping a card does nothing.
+- In the alarm editor the bottom row is: Delete (red circle, existing alarms only), Save (accent pill), Cancel (X circle). In edit mode, tapping a card does nothing.
 
 ## Behaviour notes
 - Each alarm has two pending intents: REGULAR (scheduled time) and AGAIN (snooze / auto-repeat re-ring).
@@ -24,12 +27,21 @@ Alarms, Stopwatch, Timer (bottom bar, three items). Settings is the gear in the 
 - The alarm widget's + opens the normal new-alarm editor. There is no separate quick-alarm feature any more.
 
 ## Lock-screen ringing
-Turn off and Silence are swipes: drag the circle any direction, a bigger circle fills in as you pull, let go past the
-threshold to fire. Snooze stays a tap. The notification also has plain buttons as a fallback.
+Turn off and Silence are swipes: the X stays put and a translucent circle follows your finger, growing as you pull;
+let go past the threshold to fire. At rest the circle breathes behind the X and the X shakes now and then, pausing
+while you touch and resuming about 2 seconds after you let go. Snooze stays a tap. The notification also has plain buttons as a fallback.
 
 The ringing screen opens through a full-screen notification, plus a screen wake lock and a direct launch attempt.
 On Android 14+ the "full-screen notifications" permission must be on. The app asks for it on launch, and
 Settings > Reliability checklist has the same shortcut.
+
+## Notifications
+- Bedtime reminder, every night at 10:30 pm: "No alarm for tomorrow morning" if nothing rings between 4:00 and 11:00 am
+  tomorrow, otherwise the earliest alarm's name and time as the heading, with "<name> rings tomorrow morning at <time>"
+  when expanded. Switch it off in Settings.
+- Upcoming alarm notice, 15 minutes before every enabled alarm (any snooze/repeat mode): name and time as the heading,
+  a live countdown clock, and "<name> rings in N mins" when expanded (refreshed each minute, best effort in Doze).
+  Swiping it away stops the refreshes. Switch it off in Settings.
 
 ## Timer, stopwatch, widgets, backup
 - Timer: wheels, 3 editable presets (long-press), pause/resume/cancel, +1:00, rings with the alarm sound, survives reboot.

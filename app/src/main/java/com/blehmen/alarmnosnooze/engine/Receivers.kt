@@ -12,12 +12,34 @@ import kotlinx.coroutines.launch
 
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != AlarmEngine.ACTION_FIRE) return
-        val start = Intent(context, AlarmService::class.java)
-            .setAction(AlarmService.ACTION_RING)
-            .putExtra(AlarmService.EXTRA_ID, intent.getIntExtra(AlarmEngine.EXTRA_ID, -1))
-            .putExtra(AlarmService.EXTRA_KIND, intent.getIntExtra(AlarmEngine.EXTRA_KIND, AlarmEngine.REGULAR))
-        ContextCompat.startForegroundService(context, start)
+        val id = intent.getIntExtra(AlarmEngine.EXTRA_ID, -1)
+        when (intent.action) {
+            AlarmEngine.ACTION_UPCOMING_DISMISS -> context.app.engine.dismissUpcoming(id)
+            AlarmEngine.ACTION_FIRE -> {
+                val kind = intent.getIntExtra(AlarmEngine.EXTRA_KIND, AlarmEngine.REGULAR)
+                if (kind == AlarmEngine.UPCOMING) {
+                    val pending = goAsync()
+                    CoroutineScope(Dispatchers.IO).launch {
+                        try { context.app.engine.onUpcoming(id) } finally { pending.finish() }
+                    }
+                    return
+                }
+                val start = Intent(context, AlarmService::class.java)
+                    .setAction(AlarmService.ACTION_RING)
+                    .putExtra(AlarmService.EXTRA_ID, id)
+                    .putExtra(AlarmService.EXTRA_KIND, kind)
+                ContextCompat.startForegroundService(context, start)
+            }
+        }
+    }
+}
+
+class BedtimeReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val pending = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try { BedtimeReminder.fire(context) } finally { pending.finish() }
+        }
     }
 }
 
@@ -51,6 +73,7 @@ class BootReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                BedtimeReminder.schedule(context)
                 when (intent.action) {
                     Intent.ACTION_BOOT_COMPLETED -> {
                         app.engine.onBoot()

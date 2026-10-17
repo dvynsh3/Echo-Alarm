@@ -129,6 +129,10 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                 Switch(checked = s.resumeAfterReboot, onCheckedChange = vm::setResume)
             }
 
+            SwitchRow("Warning before deletion", "Ask before a trash button deletes an alarm", s.confirmDelete, vm::setConfirmDelete)
+            SwitchRow("Bedtime reminder", "10:30 pm each night: what rings tomorrow morning, or that nothing does", s.bedtimeReminder, vm::setBedtimeReminder)
+            SwitchRow("Upcoming alarm notice", "A notification with a live countdown 15 minutes before every alarm", s.upcomingNotice, vm::setUpcomingNotice)
+
             Header("Defaults for new alarms")
             val soundName = remember(s.defaultSoundUri) {
                 val u = s.defaultSoundUri?.let { Uri.parse(it) } ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
@@ -287,4 +291,15 @@ private fun openOemAutoStart(ctx: Context) {
         } catch (_: Exception) { /* try next */ }
     }
     ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}")))
+}
+
+@Composable
+private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(title, fontSize = 16.sp)
+            Text(subtitle, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
 }

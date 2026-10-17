@@ -179,6 +179,7 @@ fun AppRoot(vm: MainViewModel, onEnterPip: () -> Unit) {
                                 AlarmEditorScreen(
                                     initial = initial,
                                     isNew = s.id == -1,
+                                    confirmDelete = settings.confirmDelete,
                                     onSave = { vm.save(it); kind = KIND_MAIN },
                                     onCancel = { kind = KIND_MAIN },
                                     onDelete = { vm.delete(initial); kind = KIND_MAIN },
@@ -204,9 +205,11 @@ fun AppRoot(vm: MainViewModel, onEnterPip: () -> Unit) {
                                             onOpen = { editId = it.id; kind = KIND_EDITOR },
                                             onAdd = { editId = -1; kind = KIND_EDITOR },
                                             onPin = vm::togglePin,
+                                            onDuplicate = vm::duplicate,
                                             onDelete = vm::delete,
                                             onReorder = vm::saveOrder,
                                             onSettings = { kind = KIND_SETTINGS },
+                                            confirmDelete = settings.confirmDelete,
                                         )
                                         MainActivity.TAB_STOPWATCH -> StopwatchScreen(stopwatch, vm::swToggle, vm::swLap, vm::swReset)
                                         else -> TimerScreen(

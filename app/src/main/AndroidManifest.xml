@@ -55,6 +55,7 @@
             android:foregroundServiceType="mediaPlayback" />
 
         <receiver android:name=".engine.AlarmReceiver" android:exported="false" />
+        <receiver android:name=".engine.BedtimeReceiver" android:exported="false" />
         <receiver android:name=".engine.TimerReceiver" android:exported="false" />
 
         <receiver android:name=".engine.BootReceiver" android:exported="true">
