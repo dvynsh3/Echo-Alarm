@@ -5,11 +5,17 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.text.format.DateFormat
 import com.blehmen.alarmnosnooze.MainActivity
 import com.blehmen.alarmnosnooze.data.Alarm
 import com.blehmen.alarmnosnooze.data.AlarmDao
 import com.blehmen.alarmnosnooze.data.SettingsRepo
 import com.blehmen.alarmnosnooze.service.AlarmService
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.TextStyle
+import java.util.Locale
 
 /**
  * All alarm state transitions live here.
@@ -65,7 +71,8 @@ class AlarmEngine(
 
     suspend fun scheduleRegular(a: Alarm): Alarm {
         if (!a.enabled) { cancel(a.id, REGULAR); cancelUpcoming(a.id); return a }
-        val next = nextOccurrence(a.hour, a.minute, a.repeatDays).toInstant().toEpochMilli()
+        val from = ZonedDateTime.ofInstant(Instant.ofEpochMilli(maxOf(now(), a.skipUntil)), ZoneId.systemDefault())
+        val next = nextOccurrence(a.hour, a.minute, a.repeatDays, from).toInstant().toEpochMilli()
         setClock(a.id, REGULAR, next)
         val u = a.copy(nextTriggerAt = next)
         dao.update(u)
@@ -81,7 +88,7 @@ class AlarmEngine(
             Notifier.cancelRepeating(ctx, alarm.id)
             AlarmService.send(ctx, AlarmService.ACTION_FORCE_STOP, alarm.id)
         }
-        val clean = alarm.copy(enabled = true, sessionActive = false, repeatCount = 0, nextAgainAt = 0)
+        val clean = alarm.copy(enabled = true, sessionActive = false, repeatCount = 0, nextAgainAt = 0, skipUntil = 0)
         val id = if (alarm.id == 0) dao.insert(clean.copy(sortOrder = dao.maxOrder() + 1)).toInt()
         else { dao.update(clean); alarm.id }
         dao.get(id)?.let { scheduleRegular(it) }
@@ -93,7 +100,7 @@ class AlarmEngine(
         cancel(id, REGULAR); cancel(id, AGAIN); cancelUpcoming(id)
         Notifier.cancelRepeating(ctx, id)
         if (!on) AlarmService.send(ctx, AlarmService.ACTION_FORCE_STOP, id)
-        val u = a.copy(enabled = on, sessionActive = false, repeatCount = 0, nextAgainAt = 0, nextTriggerAt = 0)
+        val u = a.copy(enabled = on, sessionActive = false, repeatCount = 0, nextAgainAt = 0, nextTriggerAt = 0, skipUntil = 0)
         dao.update(u)
         if (on) scheduleRegular(u)
     }
@@ -135,8 +142,10 @@ class AlarmEngine(
             return u
         }
         if (!a.sessionActive) return null
+        cancelUpcoming(id)
         val u = a.copy(repeatCount = a.repeatCount + 1, nextAgainAt = 0)
         dao.update(u)
+        if (a.repeatDays != 0) scheduleUpcoming(u)
         return u
     }
 
@@ -153,7 +162,7 @@ class AlarmEngine(
 
     suspend fun snooze(id: Int) {
         val a = dao.get(id) ?: return
-        val at = now() + a.snoozeMinutes * 60_000L
+        val at = now() + (if (a.snoozeEnabled) a.snoozeMinutes else 5) * 60_000L
         setClock(id, AGAIN, at)
         dao.update(a.copy(nextAgainAt = at))
     }
@@ -190,6 +199,84 @@ class AlarmEngine(
         }
     }
 
+    // ---------------------------------------------------------------- skip / delay ONE instance
+
+    private fun dayAndTime(ms: Long): String {
+        val z = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault())
+        val day = z.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())
+        val (t, ap) = timeParts(z.hour, z.minute, DateFormat.is24HourFormat(ctx))
+        return "$day ${if (ap.isEmpty()) t else "$t $ap"}"
+    }
+
+    /**
+     * "Turn off upcoming alarm instance": treated like toggling the alarm off for its next ring, without touching its
+     * time, days or settings. While a snooze/repeat session is running it stops today's rings only. A one-time alarm
+     * has no later ring, so it switches off. Returns text for the snackbar, or null if nothing was skipped.
+     */
+    suspend fun skipUpcoming(id: Int): String? {
+        val a = dao.get(id) ?: return null
+        if (!a.enabled) return null
+        val title = if (a.label.isBlank()) "Alarm" else a.label
+        when {
+            a.sessionActive -> {
+                AlarmService.send(ctx, AlarmService.ACTION_FORCE_STOP, id)
+                endSession(id)
+            }
+            a.repeatDays == 0 -> setEnabled(id, false)
+            else -> {
+                val from = ZonedDateTime.ofInstant(Instant.ofEpochMilli(maxOf(now(), a.skipUntil)), ZoneId.systemDefault())
+                val instance = a.nextTriggerAt.takeIf { it > now() }
+                    ?: nextOccurrence(a.hour, a.minute, a.repeatDays, from).toInstant().toEpochMilli()
+                scheduleRegular(a.copy(skipUntil = instance))
+            }
+        }
+        val u = dao.get(id) ?: return null
+        return when {
+            !u.enabled -> "$title turned off"
+            u.nextTriggerAt > now() ->
+                (if (a.sessionActive) "Stopped repeating $title" else "Skipped $title") + " · next ${dayAndTime(u.nextTriggerAt)}"
+            else -> "Skipped $title"
+        }
+    }
+
+    /** Undo for the snackbar: puts the alarm back exactly as it was before the skip. */
+    suspend fun restore(s: Alarm) {
+        cancel(s.id, REGULAR); cancel(s.id, AGAIN); cancelUpcoming(s.id)
+        dao.update(s)
+        if (!s.enabled) return
+        if (s.sessionActive && s.nextAgainAt > now()) setClock(s.id, AGAIN, s.nextAgainAt)
+        if (!(s.repeatDays == 0 && s.sessionActive)) scheduleRegular(s)
+    }
+
+    /**
+     * Delays only the coming ring, not the alarm's time or days. Before it rings, the ring is replaced by a one-off
+     * re-ring [minutes] later and the regular schedule carries on after it. Used by the 15-minute notice.
+     */
+    suspend fun delayInstance(id: Int, minutes: Int) {
+        val a = dao.get(id) ?: return
+        if (!a.enabled) return
+        val delayMs = minutes * 60_000L
+        val at: Long
+        if (a.sessionActive && a.nextAgainAt > now()) {
+            at = a.nextAgainAt + delayMs
+            setClock(id, AGAIN, at)
+            dao.update(a.copy(nextAgainAt = at))
+        } else {
+            val instance = a.nextTriggerAt.takeIf { it > now() } ?: return
+            at = instance + delayMs
+            val repeating = a.repeatDays != 0
+            val pending = a.copy(
+                skipUntil = if (repeating) instance else a.skipUntil,
+                sessionActive = true, sessionStart = instance, repeatCount = 0, nextAgainAt = at,
+                nextTriggerAt = if (repeating) a.nextTriggerAt else 0,
+            )
+            if (repeating) scheduleRegular(pending) else { cancel(id, REGULAR); dao.update(pending) }
+            setClock(id, AGAIN, at)
+        }
+        dao.get(id)?.let { if (settings.current().upcomingNotice) postUpcoming(it) }
+        announceAlarmSet(ctx, at - now())
+    }
+
     // ---------------------------------------------------------------- duplicate
 
     /** Copy with every setting kept. Only the name changes: "Gym" -> "Gym (2)" -> "Gym (3)". Sits right after the original. */
@@ -198,7 +285,7 @@ class AlarmEngine(
         val a = all.firstOrNull { it.id == id } ?: return
         val label = nextCopyLabel(a.label, all.map { it.label })
         val newId = dao.insert(
-            a.copy(id = 0, label = label, sessionActive = false, repeatCount = 0, nextAgainAt = 0, nextTriggerAt = 0)
+            a.copy(id = 0, label = label, sessionActive = false, repeatCount = 0, nextAgainAt = 0, nextTriggerAt = 0, skipUntil = 0)
         ).toInt()
         val ordered = dao.getAll().sortedWith(compareByDescending<Alarm> { it.pinned }.thenBy { it.sortOrder }.thenBy { it.id })
         val ids = ordered.map { it.id }.toMutableList()
@@ -239,26 +326,19 @@ class AlarmEngine(
     }
 
     private fun postUpcoming(a: Alarm) {
-        val remaining = a.nextTriggerAt - now()
+        val target = upcomingTarget(a)
+        val remaining = target - now()
         if (remaining <= 0) { Notifier.cancelUpcoming(ctx, a.id); return }
-        Notifier.upcoming(ctx, a, a.nextTriggerAt, now())
+        Notifier.upcoming(ctx, a, target, now())
         // Refresh the "in N mins" wording each minute. The countdown clock in the notification is live regardless.
         val nextTick = now() + 60_000 - (now() % 60_000)
-        if (nextTick < a.nextTriggerAt) armExact(a.id, UPCOMING, nextTick)
+        if (nextTick < target) armExact(a.id, UPCOMING, nextTick)
     }
 
-    /**
-     * "Snooze 5 mins" on the upcoming notice: moves the alarm itself later (its time in the app changes) and
-     * immediately refreshes the notice with the new time and countdown, even if that is now more than 15 minutes away.
-     */
-    suspend fun shiftLater(id: Int, minutes: Int) {
-        val a = dao.get(id) ?: return
-        if (!a.enabled) return
-        val total = a.hour * 60 + a.minute + minutes
-        val u = scheduleRegular(a.copy(hour = (total / 60) % 24, minute = total % 60))
-        if (settings.current().upcomingNotice) postUpcoming(u)
-        announceAlarmSet(ctx, u.nextTriggerAt - now())
-    }
+    /** The ring the notice counts down to: a pending delayed instance, otherwise the next scheduled ring. */
+    private fun upcomingTarget(a: Alarm) =
+        if (a.sessionActive && a.nextAgainAt > now()) a.nextAgainAt else a.nextTriggerAt
+
 
     suspend fun onUpcoming(id: Int) {
         val a = dao.get(id) ?: return
@@ -283,7 +363,12 @@ class AlarmEngine(
         val t = now()
         for (a in dao.getAll()) {
             if (!a.enabled) continue
-            if (a.sessionActive) {
+            if (a.sessionActive && a.sessionStart > t) {
+                val at = maxOf(a.nextAgainAt, t + 15_000)
+                dao.update(a.copy(nextAgainAt = at))
+                setClock(a.id, AGAIN, at)
+                if (a.repeatDays != 0) dao.get(a.id)?.let { scheduleRegular(it) }
+            } else if (a.sessionActive) {
                 if (resume && (a.autoRepeatEnabled || a.snoozeEnabled)) {
                     val at = maxOf(a.nextAgainAt, t + 15_000)
                     val cur = a.copy(nextAgainAt = at)

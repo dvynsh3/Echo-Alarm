@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
 class AlarmApp : Application() {
     val db by lazy {
         Room.databaseBuilder(this, AppDatabase::class.java, "alarms.db")
-            .addMigrations(MIGRATION_1_3, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_3, MIGRATION_2_3, MIGRATION_3_4)
             .build()
     }
     val settings by lazy { SettingsRepo(this) }
@@ -71,6 +71,12 @@ private val MIGRATION_1_3 = object : Migration(1, 3) {
 private val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("DROP TABLE IF EXISTS `reminders`")
+    }
+}
+
+private val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE alarms ADD COLUMN skipUntil INTEGER NOT NULL DEFAULT 0")
     }
 }
 

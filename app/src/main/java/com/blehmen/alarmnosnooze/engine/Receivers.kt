@@ -20,8 +20,9 @@ class AlarmReceiver : BroadcastReceiver() {
                 val pending = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
-                        if (action == AlarmEngine.ACTION_UPCOMING_OFF) context.app.engine.setEnabled(id, false)
-                        else context.app.engine.shiftLater(id, AlarmEngine.UPCOMING_SNOOZE_MINUTES)
+                        if (action == AlarmEngine.ACTION_UPCOMING_OFF) {
+                            context.app.engine.skipUpcoming(id)?.let { toastText(context, it) }
+                        } else context.app.engine.delayInstance(id, AlarmEngine.UPCOMING_SNOOZE_MINUTES)
                     } finally { pending.finish() }
                 }
             }

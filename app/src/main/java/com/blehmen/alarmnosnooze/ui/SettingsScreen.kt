@@ -132,6 +132,22 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
             SwitchRow("Warning before deletion", "Ask before a trash button deletes an alarm", s.confirmDelete, vm::setConfirmDelete)
             SwitchRow("Bedtime reminder", "10:30 pm each night: what rings tomorrow morning, or that nothing does", s.bedtimeReminder, vm::setBedtimeReminder)
             SwitchRow("Upcoming alarm notice", "A notification with a live countdown 15 minutes before every alarm", s.upcomingNotice, vm::setUpcomingNotice)
+            val canDraw = remember(refresh) { Settings.canDrawOverlays(ctx) }
+            SwitchRow(
+                "Display over other apps",
+                if (s.overlayEnabled && !canDraw) "Needs permission. Turn on to open the setting"
+                else "Alarms open as a full-screen pop-up while you use the phone. Off: a small notification",
+                s.overlayEnabled && canDraw,
+            ) { on ->
+                vm.setOverlayEnabled(on)
+                if (on && !canDraw) openOverlaySettings(ctx)
+            }
+            SwitchRow(
+                "Use pill when busy",
+                "On a call or meeting, in a full-screen app, with the keyboard open or casting: small notification instead of the pop-up",
+                s.pillWhenBusy && s.overlayEnabled && canDraw,
+                vm::setPillWhenBusy,
+            )
 
             Header("Defaults for new alarms")
             val soundName = remember(s.defaultSoundUri) {

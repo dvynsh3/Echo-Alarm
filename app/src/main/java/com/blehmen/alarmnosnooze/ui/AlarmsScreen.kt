@@ -12,7 +12,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -46,6 +49,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -54,11 +58,22 @@ import com.blehmen.alarmnosnooze.data.Days
 import com.blehmen.alarmnosnooze.engine.nextOccurrence
 import com.blehmen.alarmnosnooze.engine.timeParts
 import kotlinx.coroutines.delay
+import androidx.compose.ui.platform.LocalConfiguration
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.emptyFlow
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.TextStyle
+import java.util.Locale
 import java.time.format.DateTimeFormatter
 import java.util.Date
 
 private val dateFmt = DateTimeFormatter.ofPattern("EEE, d MMM")
+
+private fun dayShort(ms: Long): String =
+    Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())
 
 fun durationText(ms: Long): String {
     val mins = (ms / 60_000).toInt() + 1
@@ -93,6 +108,9 @@ fun AlarmsScreen(
     onReorder: (List<Alarm>) -> Unit,
     onSettings: () -> Unit,
     confirmDelete: Boolean = false,
+    onSkipUpcoming: (Alarm) -> Unit = {},
+    skipEvents: Flow<SkipEvent> = emptyFlow(),
+    onUndoSkip: (Alarm) -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -145,8 +163,8 @@ fun AlarmsScreen(
         val bottom = top + cur.size
         val viewport = listState.layoutInfo
         val scroll = when {
-            bottom > viewport.viewportEndOffset - edgePx -> 28f
-            top < viewport.viewportStartOffset + edgePx -> -28f
+            bottom > viewport.viewportSize.height - edgePx -> 28f
+            top < edgePx -> -28f
             else -> 0f
         }
         if (scroll != 0f) dragOffset += listState.dispatchRawDelta(scroll)
@@ -171,7 +189,15 @@ fun AlarmsScreen(
     }
 
     // ---- UI ----------------------------------------------------------------------------
-    val nextMs = alarms.filter { it.enabled && it.nextTriggerAt > now }.minOfOrNull { it.nextTriggerAt }
+    // The next ring across all alarms. A pending repeat or delayed ring counts, not only the regular schedule.
+    val upcoming = alarms.mapNotNull { a ->
+        if (!a.enabled) null else {
+            val t = if (a.sessionActive && a.nextAgainAt > now) a.nextAgainAt else a.nextTriggerAt
+            if (t > now) a to t else null
+        }
+    }.minByOrNull { it.second }
+    val nextAlarm = upcoming?.first
+    val nextMs = upcoming?.second
     val headline = when {
         editMode -> "Edit alarms"
         nextMs == null -> "All alarms are off"
@@ -180,26 +206,81 @@ fun AlarmsScreen(
     // Only animate when the kind of message changes. Minute-by-minute updates swap the text in place; cross-fading
     // those is what made the banner dip to black every time it refreshed.
     val headlineKind = when { editMode -> 0; nextMs == null -> 1; else -> 2 }
+    val subtitle = upcoming?.let { (a, t) ->
+        val z = Instant.ofEpochMilli(t).atZone(ZoneId.systemDefault())
+        val (tm, ap) = timeParts(z.hour, z.minute, is24)
+        val day = when (z.toLocalDate()) {
+            LocalDate.now() -> "Today"
+            LocalDate.now().plusDays(1) -> "Tomorrow"
+            else -> dayShort(t)
+        }
+        "${a.label.ifBlank { "Alarm" }} · $day ${if (ap.isEmpty()) tm else "$tm $ap"}"
+    }
+
+    // Banner takes the top half of the screen and stays put. The list slides up over it while it zooms out.
+    val headerHeight = (LocalConfiguration.current.screenHeightDp * 0.5f).dp
+    val headerPx = with(density) { headerHeight.toPx() }
+    val zoom by remember {
+        derivedStateOf {
+            if (listState.firstVisibleItemIndex > 0) 1f
+            else (listState.firstVisibleItemScrollOffset / (headerPx * 0.7f)).coerceIn(0f, 1f)
+        }
+    }
+    val snackbarHost = remember { SnackbarHostState() }
+    LaunchedEffect(skipEvents) {
+        skipEvents.collectLatest { e ->
+            val r = snackbarHost.showSnackbar(e.message, actionLabel = "Undo", withDismissAction = true, duration = SnackbarDuration.Long)
+            if (r == SnackbarResult.ActionPerformed) onUndoSkip(e.snapshot)
+        }
+    }
 
     Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.End) {
-                IconButton(onClick = onSettings) { Icon(Icons.Outlined.Settings, "Settings") }
-            }
-            Box(Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.fillMaxWidth().height(headerHeight).statusBarsPadding().padding(top = 24.dp)
+                .graphicsLayer {
+                    val z = zoom
+                    val scale = 1f - 0.4f * z
+                    scaleX = scale; scaleY = scale; alpha = 1f - z
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 24.dp)) {
                 AnimatedContent(
                     targetState = headlineKind,
                     transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
                     label = "headline",
                 ) { _ ->
-                    Text(headline, fontSize = 28.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onBackground)
+                    Text(
+                        headline, fontSize = 32.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                }
+                AnimatedVisibility(visible = !editMode && subtitle != null) {
+                    Text(
+                        subtitle ?: "", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
+                AnimatedVisibility(
+                    visible = !editMode && nextAlarm != null,
+                    enter = fadeIn(tween(200)) + expandVertically(tween(200)),
+                    exit = fadeOut(tween(150)) + shrinkVertically(tween(150)),
+                ) {
+                    OutlinedButton(
+                        onClick = { nextAlarm?.let(onSkipUpcoming) },
+                        modifier = Modifier.padding(top = 18.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+                    ) { Text("Turn off upcoming alarm instance") }
                 }
             }
+        }
+        Column(Modifier.fillMaxSize()) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f),
                 userScrollEnabled = draggingId == null,
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 180.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = headerHeight - 56.dp, bottom = 180.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item(key = "actions") {
@@ -251,6 +332,16 @@ fun AlarmsScreen(
             }
         }
 
+        IconButton(
+            onClick = onSettings,
+            modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(horizontal = 8.dp),
+        ) { Icon(Icons.Outlined.Settings, "Settings") }
+
+        SnackbarHost(
+            hostState = snackbarHost,
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 16.dp, end = 16.dp, bottom = 100.dp),
+        )
+
         AnimatedVisibility(
             visible = !editMode,
             modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 20.dp, bottom = 104.dp),
@@ -294,6 +385,7 @@ private fun AlarmCard(
     val ctx = LocalContext.current
     val (time, ampm) = timeParts(alarm.hour, alarm.minute, is24)
     val tags = buildList {
+        if (alarm.enabled && alarm.skipUntil > now) add("Skipping ${dayShort(alarm.skipUntil)} · next ${dayShort(alarm.nextTriggerAt)}")
         if (alarm.quick) add("Quick")
         if (alarm.snoozeEnabled) add("Snooze ${alarm.snoozeMinutes} min")
         if (alarm.autoRepeatEnabled) add("Repeats every ${alarm.autoRepeatMinutes} min")

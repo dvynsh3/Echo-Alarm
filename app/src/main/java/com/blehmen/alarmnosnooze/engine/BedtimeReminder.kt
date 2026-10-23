@@ -48,7 +48,8 @@ object BedtimeReminder {
             .filter { a ->
                 val mins = a.hour * 60 + a.minute
                 a.enabled && mins in WINDOW_START..WINDOW_END &&
-                    if (a.repeatDays != 0) (a.repeatDays and dayBit) != 0
+                    if (a.repeatDays != 0) (a.repeatDays and dayBit) != 0 &&
+                        a.skipUntil < tomorrow.atTime(a.hour, a.minute).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
                     else nextOccurrence(a.hour, a.minute, 0).toLocalDate() == tomorrow
             }
             .sortedBy { it.hour * 60 + it.minute }

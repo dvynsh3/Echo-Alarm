@@ -1,6 +1,7 @@
 package com.blehmen.alarmnosnooze.service
 
-import android.app.NotificationManager
+import android.app.KeyguardManager
+import android.app.Notification
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -39,9 +40,10 @@ class AlarmService : Service() {
         const val EXTRA_ID = "alarm_id"
         const val EXTRA_KIND = "kind"
         private const val RING_TIMEOUT_MS = 10 * 60_000L
+        private const val BUSY_RECHECK_MS = 2_000L
 
         private val _state = MutableStateFlow<Alarm?>(null)
-        /** The alarm currently ringing, or null. Observed by the ringing screen. */
+        /** The alarm currently ringing, or null. Observed by the ring screen and the pop-up. */
         val state: StateFlow<Alarm?> = _state
 
         fun send(ctx: Context, action: String, id: Int) {
@@ -51,14 +53,20 @@ class AlarmService : Service() {
         }
     }
 
+    /** How this ring is presented. */
+    private enum class Mode { OVERLAY, BUSY, PILL, LOCKED }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val engine get() = applicationContext.app.engine
+    private val overlay by lazy { RingOverlay(this) }
+    private val busy by lazy { BusyDetector(this) }
 
     private var current: Alarm? = null
     private var player: MediaPlayer? = null
     private var focus: AudioFocusRequest? = null
     private var rampJob: Job? = null
     private var timeoutJob: Job? = null
+    private var busyJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var screenLock: PowerManager.WakeLock? = null
 
@@ -68,7 +76,7 @@ class AlarmService : Service() {
         val id = intent?.getIntExtra(EXTRA_ID, -1) ?: -1
         when (intent?.action) {
             ACTION_RING -> {
-                enterForeground()
+                grabLocks()
                 val kind = intent.getIntExtra(EXTRA_KIND, AlarmEngine.REGULAR)
                 scope.launch { ring(id, kind) }
             }
@@ -99,11 +107,14 @@ class AlarmService : Service() {
         return false
     }
 
-    private fun enterForeground() {
+    private fun foreground(n: Notification) {
         ServiceCompat.startForeground(
-            this, Notifier.RING_ID, Notifier.placeholder(this),
+            this, Notifier.RING_ID, n,
             if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
         )
+    }
+
+    private fun grabLocks() {
         if (wakeLock == null) {
             wakeLock = getSystemService(PowerManager::class.java)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "alarmnosnooze:ring")
@@ -123,32 +134,75 @@ class AlarmService : Service() {
             .apply { acquire(15_000L) }
     }
 
+    // ---------------------------------------------------------------- presenting the ring
+
     private suspend fun ring(id: Int, kind: Int) {
         val prev = current
         stopPlayback()
+        hideOverlay()
         if (prev != null && prev.id != id) engine.handleMissed(prev.id)
         Notifier.cancelRepeating(this, id)
 
         val a = engine.onFire(id, kind)
-        if (a == null) { finishRing(); return }
+        if (a == null) { foreground(Notifier.placeholder(this)); finishRing(); return }
 
+        val mode = chooseMode()
+        if (mode != Mode.BUSY) busy.release()
         current = a
         _state.value = a
+        // Quiet notification when the pop-up covers the screen. Loud (heads-up pill, lock-screen takeover) otherwise.
+        foreground(Notifier.ringing(this, a, loud = mode != Mode.OVERLAY))
         startPlayback(a)
-        getSystemService(NotificationManager::class.java).notify(Notifier.RING_ID, Notifier.ringing(this, a))
-        // Belt and braces: where Android allows it this opens the ringing screen directly.
-        try {
-            startActivity(
-                Intent(this, RingingActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            )
-        } catch (_: Exception) { /* blocked; the full-screen notification handles it */ }
+
+        when (mode) {
+            Mode.OVERLAY -> if (!showOverlay()) foreground(Notifier.ringing(this, a, loud = true))
+            Mode.BUSY -> watchUntilFree()
+            Mode.LOCKED -> try {
+                startActivity(Intent(this, RingingActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
+            } catch (_: Exception) { /* blocked; the full-screen notification handles it */ }
+            Mode.PILL -> {}
+        }
 
         timeoutJob?.cancel()
         timeoutJob = scope.launch {
             delay(RING_TIMEOUT_MS)
             current?.let { c -> stopPlayback(); engine.handleMissed(c.id) }
             finishRing()
+        }
+    }
+
+    private suspend fun chooseMode(): Mode {
+        val pm = getSystemService(PowerManager::class.java)
+        val km = getSystemService(KeyguardManager::class.java)
+        if (!pm.isInteractive || km.isKeyguardLocked) return Mode.LOCKED
+        val s = applicationContext.app.settings.current()
+        if (!s.overlayEnabled || !Settings.canDrawOverlays(this)) return Mode.PILL
+        if (s.pillWhenBusy && busy.reason() != null) return Mode.BUSY
+        return Mode.OVERLAY
+    }
+
+    private suspend fun showOverlay(): Boolean {
+        val s = applicationContext.app.settings.current()
+        return overlay.show(s.themeMode, s.accent) { hideOverlay() }
+    }
+
+    private fun hideOverlay() {
+        busyJob?.cancel()
+        overlay.hide()
+        busy.release()
+    }
+
+    /** Pill is showing because the phone was busy. As soon as it is not, the pop-up takes over. */
+    private fun watchUntilFree() {
+        busyJob?.cancel()
+        busyJob = scope.launch {
+            val pm = getSystemService(PowerManager::class.java)
+            val km = getSystemService(KeyguardManager::class.java)
+            while (current != null && !overlay.isShowing) {
+                delay(BUSY_RECHECK_MS)
+                if (!pm.isInteractive || km.isKeyguardLocked) break
+                if (busy.reason() == null) { showOverlay(); break }
+            }
         }
     }
 
@@ -216,6 +270,7 @@ class AlarmService : Service() {
 
     private fun finishRing() {
         stopPlayback()
+        hideOverlay()
         timeoutJob?.cancel(); timeoutJob = null
         current = null
         _state.value = null
@@ -229,6 +284,7 @@ class AlarmService : Service() {
 
     override fun onDestroy() {
         stopPlayback()
+        hideOverlay()
         scope.cancel()
         _state.value = null
         super.onDestroy()

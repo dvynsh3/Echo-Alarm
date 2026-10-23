@@ -13,6 +13,7 @@ import java.util.Date
 
 object Notifier {
     const val CH_RING = "ring"
+    const val CH_RING_QUIET = "ring_quiet"
     const val CH_INFO = "info"
     const val CH_REPEAT = "repeat"
     const val CH_UPCOMING = "upcoming"
@@ -23,6 +24,14 @@ object Notifier {
         val nm = ctx.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
             NotificationChannel(CH_RING, "Ringing alarms", NotificationManager.IMPORTANCE_HIGH).apply {
+                setSound(null, null)
+                enableVibration(false)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            }
+        )
+        // Used while the full-screen pop-up is showing, so no second heads-up pill appears on top of it.
+        nm.createNotificationChannel(
+            NotificationChannel(CH_RING_QUIET, "Ringing alarm (pop-up)", NotificationManager.IMPORTANCE_LOW).apply {
                 setSound(null, null)
                 enableVibration(false)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
@@ -56,46 +65,43 @@ object Notifier {
         immutable()
     )
 
-    /**
-     * Shown the instant the service starts. It already carries the full-screen intent, otherwise the later
-     * update would only refresh a notification that never asked to take over the lock screen.
-     */
-    fun placeholder(ctx: Context): Notification {
-        val screen = screenIntent(ctx)
-        return Notification.Builder(ctx, CH_RING)
+    /** Only for a stale ring that is about to be dismissed; the service must still show something. */
+    fun placeholder(ctx: Context): Notification =
+        Notification.Builder(ctx, CH_RING_QUIET)
             .setSmallIcon(R.drawable.ic_notif)
             .setContentTitle("Alarm")
             .setCategory(Notification.CATEGORY_ALARM)
             .setOngoing(true)
-            .setVisibility(Notification.VISIBILITY_PUBLIC)
-            .setContentIntent(screen)
-            .setFullScreenIntent(screen, true)
             .build()
-    }
 
-    fun ringing(ctx: Context, a: Alarm): Notification {
+    /**
+     * The ringing notification (the "pill" when it is not a pop-up). [loud] = heads-up and lock-screen takeover;
+     * quiet is used while the full-screen pop-up is showing.
+     */
+    fun ringing(ctx: Context, a: Alarm, loud: Boolean = true): Notification {
         val screen = screenIntent(ctx)
-        val b = Notification.Builder(ctx, CH_RING)
+        val (t, ap) = timeParts(a.hour, a.minute, DateFormat.is24HourFormat(ctx))
+        val time = if (ap.isEmpty()) t else "$t $ap"
+        val detail = when {
+            a.autoRepeatEnabled -> "Ringing now. Rings again in ${a.autoRepeatMinutes} min after Silence."
+            a.snoozeEnabled -> "Ringing now. Snooze rings again in ${a.snoozeMinutes} min."
+            else -> "Ringing now. Delay rings again in 5 min."
+        }
+        val b = Notification.Builder(ctx, if (loud) CH_RING else CH_RING_QUIET)
             .setSmallIcon(R.drawable.ic_notif)
-            .setContentTitle(title(a))
-            .setContentText(timeText(ctx, System.currentTimeMillis()))
+            .setContentTitle("${title(a)} · $time")
+            .setContentText(detail)
+            .setStyle(Notification.BigTextStyle().bigText(detail))
             .setCategory(Notification.CATEGORY_ALARM)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setContentIntent(screen)
-            .setFullScreenIntent(screen, true)
-        when {
-            a.autoRepeatEnabled -> b.addAction(
-                Notification.Action.Builder(null, "Silence", svc(ctx, AlarmService.ACTION_SILENCE, a.id)).build()
-            )
-            else -> {
-                b.addAction(Notification.Action.Builder(null, "Turn off", svc(ctx, AlarmService.ACTION_TURN_OFF, a.id)).build())
-                if (a.snoozeEnabled) b.addAction(
-                    Notification.Action.Builder(null, "Snooze", svc(ctx, AlarmService.ACTION_SNOOZE, a.id)).build()
-                )
-            }
-        }
+        if (loud) b.setFullScreenIntent(screen, true)
+        val first = if (a.autoRepeatEnabled) "Silence" to AlarmService.ACTION_SILENCE else "Turn off" to AlarmService.ACTION_TURN_OFF
+        val delay = if (a.snoozeEnabled) "Snooze ${a.snoozeMinutes} min" else "Delay 5 min"
+        b.addAction(Notification.Action.Builder(null, first.first, svc(ctx, first.second, a.id)).build())
+        b.addAction(Notification.Action.Builder(null, delay, svc(ctx, AlarmService.ACTION_SNOOZE, a.id)).build())
         return b.build()
     }
 

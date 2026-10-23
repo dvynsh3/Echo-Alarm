@@ -206,6 +206,9 @@ fun AppRoot(vm: MainViewModel, onEnterPip: () -> Unit) {
                                             onAdd = { editId = -1; kind = KIND_EDITOR },
                                             onPin = vm::togglePin,
                                             onDuplicate = vm::duplicate,
+                                            onSkipUpcoming = vm::skipUpcoming,
+                                            skipEvents = vm.skipEvents,
+                                            onUndoSkip = vm::undoSkip,
                                             onDelete = vm::delete,
                                             onReorder = vm::saveOrder,
                                             onSettings = { kind = KIND_SETTINGS },
@@ -225,7 +228,7 @@ fun AppRoot(vm: MainViewModel, onEnterPip: () -> Unit) {
                                     }
                                 }
                                 BottomPill(vm.tab, { vm.tab = it }, Modifier.align(Alignment.BottomCenter))
-                                FullScreenPrompt()
+                                if (settings.loaded) { if (!settings.overlayAsked) OverlayPrompt(vm) else FullScreenPrompt() }
                             }
                         }
                     }
@@ -233,6 +236,23 @@ fun AppRoot(vm: MainViewModel, onEnterPip: () -> Unit) {
             }
         }
     }
+}
+
+/** Asked once, the first time the app is opened. */
+@Composable
+private fun OverlayPrompt(vm: MainViewModel) {
+    val ctx = LocalContext.current
+    if (Settings.canDrawOverlays(ctx)) {
+        LaunchedEffect(Unit) { vm.markOverlayAsked() }
+        return
+    }
+    AlertDialog(
+        onDismissRequest = { vm.markOverlayAsked() },
+        title = { Text("Show alarms over other apps") },
+        text = { Text("Let the alarm open as a full-screen pop-up while you are using your phone, so you can swipe it off or delay it right away. Without this you only get a small notification. You can change this later in Settings.") },
+        confirmButton = { TextButton(onClick = { vm.markOverlayAsked(); openOverlaySettings(ctx) }) { Text("Open settings") } },
+        dismissButton = { TextButton(onClick = { vm.markOverlayAsked() }) { Text("Not now") } },
+    )
 }
 
 /**

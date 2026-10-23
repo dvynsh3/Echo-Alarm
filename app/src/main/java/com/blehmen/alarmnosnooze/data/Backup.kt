@@ -29,6 +29,8 @@ object Backup {
             put("confirmDelete", s.confirmDelete)
             put("bedtimeReminder", s.bedtimeReminder)
             put("upcomingNotice", s.upcomingNotice)
+            put("overlayEnabled", s.overlayEnabled)
+            put("pillWhenBusy", s.pillWhenBusy)
         })
 
         root.put("timerPresets", JSONArray(app.timerRepo.timerNow().presets))
@@ -103,6 +105,8 @@ object Backup {
             if (st.has("confirmDelete")) repo.setConfirmDelete(st.getBoolean("confirmDelete"))
             if (st.has("bedtimeReminder")) repo.setBedtimeReminder(st.getBoolean("bedtimeReminder"))
             if (st.has("upcomingNotice")) repo.setUpcomingNotice(st.getBoolean("upcomingNotice"))
+            if (st.has("overlayEnabled")) repo.setOverlayEnabled(st.getBoolean("overlayEnabled"))
+            if (st.has("pillWhenBusy")) repo.setPillWhenBusy(st.getBoolean("pillWhenBusy"))
         }
         if (!presets.isNullOrEmpty()) app.timerRepo.setPresets(presets)
 

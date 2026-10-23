@@ -75,3 +75,7 @@ fun announceAlarmSet(ctx: Context, msUntil: Long) {
         Toast.makeText(ctx.applicationContext, "Alarm set for ${toastDuration(msUntil)} from now", Toast.LENGTH_SHORT).show()
     }
 }
+
+fun toastText(ctx: Context, message: String) {
+    Handler(Looper.getMainLooper()).post { Toast.makeText(ctx.applicationContext, message, Toast.LENGTH_LONG).show() }
+}

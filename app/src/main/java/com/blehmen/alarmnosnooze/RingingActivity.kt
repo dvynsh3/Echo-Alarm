@@ -81,7 +81,7 @@ class RingingActivity : ComponentActivity() {
 }
 
 @Composable
-private fun RingingScreen(accent: Color, onFinish: () -> Unit) {
+internal fun RingingScreen(accent: Color, onFinish: () -> Unit) {
     val ctx = LocalContext.current
     val alarm by AlarmService.state.collectAsState()
     var seen by remember { mutableStateOf(false) }
@@ -125,15 +125,19 @@ private fun RingingScreen(accent: Color, onFinish: () -> Unit) {
                         SwipeAction(Icons.Filled.Close, "Swipe to turn off") {
                             AlarmService.send(ctx, AlarmService.ACTION_TURN_OFF, a.id)
                         }
-                        if (a.snoozeEnabled) {
-                            Spacer(Modifier.height(20.dp))
-                            Box(
-                                Modifier.clip(CircleShape).background(Color.White.copy(alpha = 0.2f))
-                                    .clickable { AlarmService.send(ctx, AlarmService.ACTION_SNOOZE, a.id) }
-                                    .padding(horizontal = 40.dp, vertical = 18.dp),
-                                contentAlignment = Alignment.Center,
-                            ) { Text("Snooze ${a.snoozeMinutes} mins", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp) }
-                        }
+                    }
+                    // Delays only this ring. The alarm's own time and days are untouched.
+                    Spacer(Modifier.height(20.dp))
+                    Box(
+                        Modifier.clip(CircleShape).background(Color.White.copy(alpha = 0.2f))
+                            .clickable { AlarmService.send(ctx, AlarmService.ACTION_SNOOZE, a.id) }
+                            .padding(horizontal = 40.dp, vertical = 18.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            if (a.snoozeEnabled) "Snooze ${a.snoozeMinutes} mins" else "Delay 5 mins",
+                            color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp,
+                        )
                     }
                 }
             }

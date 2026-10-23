@@ -34,7 +34,7 @@ interface AlarmDao {
     suspend fun setOrder(id: Int, order: Int)
 }
 
-@Database(entities = [Alarm::class], version = 3, exportSchema = false)
+@Database(entities = [Alarm::class], version = 4, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun alarmDao(): AlarmDao
 }

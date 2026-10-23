@@ -17,12 +17,16 @@ import com.blehmen.alarmnosnooze.data.StopwatchState
 import com.blehmen.alarmnosnooze.engine.announceAlarmSet
 import com.blehmen.alarmnosnooze.data.TimerState
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalTime
+
+/** Shown in the snackbar after "Turn off upcoming alarm instance"; [snapshot] is what Undo puts back. */
+data class SkipEvent(val message: String, val snapshot: Alarm)
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as AlarmApp
@@ -70,12 +74,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun blank(): Alarm { val t = LocalTime.now(); return newAlarm(t.hour, t.minute) }
 
+    val skipEvents = MutableSharedFlow<SkipEvent>(extraBufferCapacity = 1)
+
+    /** Treats the alarm's next ring as dismissed, leaving its time, days and settings alone. */
+    fun skipUpcoming(a: Alarm) = viewModelScope.launch {
+        val before = app.db.alarmDao().get(a.id) ?: return@launch
+        val message = app.engine.skipUpcoming(a.id) ?: return@launch
+        skipEvents.emit(SkipEvent(message, before))
+    }
+
+    fun undoSkip(snapshot: Alarm) = viewModelScope.launch { app.engine.restore(snapshot) }
+
     // ---- settings
     fun setTheme(v: Int) = viewModelScope.launch { app.settings.setTheme(v) }
     fun setAccent(v: Int) = viewModelScope.launch { app.settings.setAccent(v) }
     fun setMaxRepeats(v: Int) = viewModelScope.launch { app.settings.setMaxRepeats(v) }
     fun setResume(v: Boolean) = viewModelScope.launch { app.settings.setResume(v) }
     fun setConfirmDelete(v: Boolean) = viewModelScope.launch { app.settings.setConfirmDelete(v) }
+    fun setOverlayEnabled(v: Boolean) = viewModelScope.launch { app.settings.setOverlayEnabled(v) }
+    fun setPillWhenBusy(v: Boolean) = viewModelScope.launch { app.settings.setPillWhenBusy(v) }
+    fun markOverlayAsked() = viewModelScope.launch { app.settings.setOverlayAsked(true) }
     fun setBedtimeReminder(v: Boolean) = viewModelScope.launch { app.settings.setBedtimeReminder(v) }
     fun setUpcomingNotice(v: Boolean) = viewModelScope.launch {
         app.settings.setUpcomingNotice(v)

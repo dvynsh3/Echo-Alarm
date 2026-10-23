@@ -28,6 +28,13 @@ data class AppSettings(
     val confirmDelete: Boolean = false,
     val bedtimeReminder: Boolean = true,
     val upcomingNotice: Boolean = true,
+    /** Alarm opens as a full-screen pop-up over other apps (needs the 'display over other apps' permission). */
+    val overlayEnabled: Boolean = true,
+    /** Use the small notification instead of the pop-up while busy (calls, full-screen apps, keyboard...). */
+    val pillWhenBusy: Boolean = true,
+    val overlayAsked: Boolean = false,
+    /** False until DataStore has delivered the real values. */
+    val loaded: Boolean = false,
 )
 
 class SettingsRepo(private val ctx: Context) {
@@ -43,6 +50,9 @@ class SettingsRepo(private val ctx: Context) {
         val confirmDelete = booleanPreferencesKey("confirm_delete")
         val bedtime = booleanPreferencesKey("bedtime_reminder")
         val upcoming = booleanPreferencesKey("upcoming_notice")
+        val overlay = booleanPreferencesKey("overlay_enabled")
+        val pillBusy = booleanPreferencesKey("pill_when_busy")
+        val overlayAsked = booleanPreferencesKey("overlay_asked")
     }
 
     val flow: Flow<AppSettings> = ctx.dataStore.data.map { p ->
@@ -58,6 +68,10 @@ class SettingsRepo(private val ctx: Context) {
             confirmDelete = p[K.confirmDelete] ?: false,
             bedtimeReminder = p[K.bedtime] ?: true,
             upcomingNotice = p[K.upcoming] ?: true,
+            overlayEnabled = p[K.overlay] ?: true,
+            pillWhenBusy = p[K.pillBusy] ?: true,
+            overlayAsked = p[K.overlayAsked] ?: false,
+            loaded = true,
         )
     }
 
@@ -75,4 +89,7 @@ class SettingsRepo(private val ctx: Context) {
     suspend fun setConfirmDelete(v: Boolean) { ctx.dataStore.edit { it[K.confirmDelete] = v } }
     suspend fun setBedtimeReminder(v: Boolean) { ctx.dataStore.edit { it[K.bedtime] = v } }
     suspend fun setUpcomingNotice(v: Boolean) { ctx.dataStore.edit { it[K.upcoming] = v } }
+    suspend fun setOverlayEnabled(v: Boolean) { ctx.dataStore.edit { it[K.overlay] = v } }
+    suspend fun setPillWhenBusy(v: Boolean) { ctx.dataStore.edit { it[K.pillBusy] = v } }
+    suspend fun setOverlayAsked(v: Boolean) { ctx.dataStore.edit { it[K.overlayAsked] = v } }
 }

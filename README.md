@@ -18,6 +18,26 @@ Alarms, Stopwatch, Timer (bottom bar, three items). Settings is the gear in the 
 - An accent edge on the left of a card, full height and curving with the card corners, means that alarm is on.
 - In the alarm editor the bottom row is: Delete (red circle, existing alarms only), Save (accent pill), Cancel (X circle). In edit mode, tapping a card does nothing.
 
+## Turning off one ring without touching the alarm
+- The banner at the top is the next ring across all alarms (a pending repeat counts too), with the alarm name and time,
+  and a **Turn off upcoming alarm instance** button. It behaves as if you toggled the alarm off for that ring only:
+  a weekday alarm skips to its next day, with its time, days and settings untouched. During a snooze/repeat session it
+  stops that day's remaining repeats. A one-time alarm has no later ring, so it switches off.
+- A snackbar offers **Undo**, and the card shows "Skipping Fri · next Mon". Editing or toggling the alarm clears the skip.
+- The upcoming-alarm notification's Turn off does the same skip, and its Snooze 5 mins delays only that ring.
+- The banner fills the top half of the screen and stays put: the cards slide up over it while it zooms out.
+
+## Ringing: pop-up or pill
+- Screen on and unlocked: a full-screen pop-up (swipe to turn off or silence, plus Delay 5 mins or the alarm's own Snooze).
+  It is an overlay window, so Settings > Display over other apps must be on (asked the first time the app opens).
+- Screen off or locked: the full-screen notification, as before.
+- Pill (small notification with name, time, "rings again" and Turn off or Silence plus Delay) instead of the pop-up when the
+  phone looks busy and Settings > Use pill when busy is on, or when the overlay setting is off:
+  phone or VoIP call, microphone in use, full-screen app, keyboard open, casting or external display, car mode.
+  While the pill shows it rechecks every 2 seconds and the pop-up takes over once the phone is free.
+- Full-screen app and keyboard detection are best effort and unverified. When the phone gives no answer, it counts as not busy.
+- Delay only moves the coming ring; the alarm's time and days stay as they are.
+
 ## Behaviour notes
 - Each alarm has two pending intents: REGULAR (scheduled time) and AGAIN (snooze / auto-repeat re-ring).
 - Snooze and Auto repeat are mutually exclusive.

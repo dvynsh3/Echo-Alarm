@@ -32,6 +32,8 @@ data class Alarm(
     val sessionStart: Long = 0,
     val repeatCount: Int = 0,
     val nextAgainAt: Long = 0,
+    /** The ring at exactly this time was skipped. Occurrences up to and including it are ignored. */
+    val skipUntil: Long = 0,
 )
 
 object Days {
