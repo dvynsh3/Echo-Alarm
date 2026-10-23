@@ -11,12 +11,12 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
-import androidx.lifecycle.ViewTreeLifecycleOwner
-import androidx.lifecycle.ViewTreeViewModelStoreOwner
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
-import androidx.savedstate.ViewTreeSavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.blehmen.alarmnosnooze.RingingScreen
 import com.blehmen.alarmnosnooze.ui.AppTheme
 
@@ -33,9 +33,9 @@ class RingOverlay(private val ctx: Context) {
         if (view != null) return true
         val o = Owner().also { it.create() }
         val v = ComposeView(ctx).apply {
-            ViewTreeLifecycleOwner.set(this, o)
-            ViewTreeSavedStateRegistryOwner.set(this, o)
-            ViewTreeViewModelStoreOwner.set(this, o)
+            setViewTreeLifecycleOwner(o)
+            setViewTreeSavedStateRegistryOwner(o)
+            setViewTreeViewModelStoreOwner(o)
             setContent { AppTheme(themeMode, accent) { RingingScreen(Color(accent), onFinish) } }
         }
         val lp = WindowManager.LayoutParams(
