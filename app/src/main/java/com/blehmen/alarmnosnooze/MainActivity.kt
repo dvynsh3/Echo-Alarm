@@ -209,6 +209,7 @@ fun AppRoot(vm: MainViewModel, onEnterPip: () -> Unit) {
                                             onSkipUpcoming = vm::skipUpcoming,
                                             skipEvents = vm.skipEvents,
                                             onUndoSkip = vm::undoSkip,
+                                            onStopRinging = vm::stopRinging,
                                             onDelete = vm::delete,
                                             onReorder = vm::saveOrder,
                                             onSettings = { kind = KIND_SETTINGS },

@@ -61,6 +61,7 @@ import com.blehmen.alarmnosnooze.data.Alarm
 import com.blehmen.alarmnosnooze.data.Days
 import com.blehmen.alarmnosnooze.engine.nextOccurrence
 import com.blehmen.alarmnosnooze.engine.timeParts
+import com.blehmen.alarmnosnooze.service.AlarmService
 import kotlinx.coroutines.delay
 import androidx.compose.ui.platform.LocalConfiguration
 import kotlinx.coroutines.flow.Flow
@@ -115,6 +116,7 @@ fun AlarmsScreen(
     onSkipUpcoming: (Alarm) -> Unit = {},
     skipEvents: Flow<SkipEvent> = emptyFlow(),
     onUndoSkip: (Alarm) -> Unit = {},
+    onStopRinging: (Alarm) -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -193,6 +195,10 @@ fun AlarmsScreen(
     }
 
     // ---- UI ----------------------------------------------------------------------------
+    // The alarm that is ringing right now, if any. It takes over the banner.
+    val ringingAlarm by AlarmService.state.collectAsState()
+    val ringing = ringingAlarm
+
     // The next ring across all alarms. A pending repeat or delayed ring counts, not only the regular schedule.
     val upcoming = alarms.mapNotNull { a ->
         if (!a.enabled) null else {
@@ -203,14 +209,20 @@ fun AlarmsScreen(
     val nextAlarm = upcoming?.first
     val nextMs = upcoming?.second
     val headline = when {
+        ringing != null -> "Ringing now"
         editMode -> "Edit alarms"
         nextMs == null -> "All alarms are off"
         else -> "Alarm in ${durationText(nextMs - now)}"
     }
     // Only animate when the kind of message changes. Minute-by-minute updates swap the text in place; cross-fading
     // those is what made the banner dip to black every time it refreshed.
-    val headlineKind = when { editMode -> 0; nextMs == null -> 1; else -> 2 }
-    val subtitle = upcoming?.let { (a, t) ->
+    val headlineKind = when { ringing != null -> 3; editMode -> 0; nextMs == null -> 1; else -> 2 }
+    val bannerButton = ringing != null || (!editMode && nextAlarm != null)
+    val buttonLabel = if (ringing != null) "Turn off ringing alarm" else "Turn off upcoming alarm instance"
+    val subtitle = if (ringing != null) {
+        val (tm, ap) = timeParts(ringing.hour, ringing.minute, is24)
+        "${ringing.label.ifBlank { "Alarm" }} · ${if (ap.isEmpty()) tm else "$tm $ap"}"
+    } else upcoming?.let { (a, t) ->
         val z = Instant.ofEpochMilli(t).atZone(ZoneId.systemDefault())
         val (tm, ap) = timeParts(z.hour, z.minute, is24)
         val day = when (z.toLocalDate()) {
@@ -269,8 +281,8 @@ fun AlarmsScreen(
             contentAlignment = Alignment.Center,
         ) {
             BannerColumn(
-                headline, headlineKind, subtitle, showSubtitle = !editMode && subtitle != null,
-                showButton = !editMode && nextAlarm != null, textAlpha = { 1f }, buttonAlpha = { 0f }, onSkip = {},
+                headline, headlineKind, subtitle, showSubtitle = (ringing != null || !editMode) && subtitle != null,
+                showButton = bannerButton, textAlpha = { 1f }, buttonAlpha = { 0f }, onSkip = {}, buttonLabel = buttonLabel,
             )
         }
         Column(Modifier.fillMaxSize()) {
@@ -310,6 +322,7 @@ fun AlarmsScreen(
                         },
                         onPin = { onPin(alarm) },
                         onDuplicate = { onDuplicate(alarm) },
+                        ringing = ringing?.id == alarm.id,
                         onDelete = { if (confirmDelete) pendingDelete = alarm else onDelete(alarm) },
                     )
                 }
@@ -318,7 +331,7 @@ fun AlarmsScreen(
 
         // Layer in front of the list: identical layout, but only the button is visible. The list would swallow taps
         // on anything behind it.
-        if (!editMode && nextAlarm != null && buttonLive) {
+        if (bannerButton && buttonLive) {
             Box(
                 Modifier.fillMaxWidth().height(headerHeight).statusBarsPadding().padding(top = 24.dp)
                     .graphicsLayer {
@@ -330,7 +343,8 @@ fun AlarmsScreen(
                 BannerColumn(
                     headline, headlineKind, subtitle, showSubtitle = subtitle != null,
                     showButton = true, textAlpha = { 0f }, buttonAlpha = { (1f - zoom * 4f).coerceIn(0f, 1f) },
-                    onSkip = { onSkipUpcoming(nextAlarm) },
+                    onSkip = { if (ringing != null) onStopRinging(ringing) else nextAlarm?.let(onSkipUpcoming) },
+                    buttonLabel = buttonLabel,
                 )
             }
         }
@@ -422,10 +436,12 @@ private fun AlarmCard(
     onPin: () -> Unit,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
+    ringing: Boolean = false,
 ) {
     val ctx = LocalContext.current
     val (time, ampm) = timeParts(alarm.hour, alarm.minute, is24)
     val tags = buildList {
+        if (ringing) add("Ringing now")
         if (alarm.enabled && alarm.skipUntil > now) add("Skipping ${dayShort(alarm.skipUntil)} · next ${dayShort(alarm.nextTriggerAt)}")
         if (alarm.quick) add("Quick")
         if (alarm.snoozeEnabled) add("Snooze ${alarm.snoozeMinutes} min")
@@ -516,6 +532,7 @@ private fun BannerColumn(
     textAlpha: () -> Float,
     buttonAlpha: () -> Float,
     onSkip: () -> Unit,
+    buttonLabel: String,
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 24.dp)) {
         Column(Modifier.graphicsLayer { alpha = textAlpha() }, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -546,7 +563,7 @@ private fun BannerColumn(
                 modifier = Modifier.padding(top = 18.dp).graphicsLayer { alpha = buttonAlpha() },
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
-            ) { Text("Turn off upcoming alarm instance") }
+            ) { Text(buttonLabel) }
         }
     }
 }

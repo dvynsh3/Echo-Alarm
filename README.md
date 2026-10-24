@@ -25,6 +25,8 @@ Alarms, Stopwatch, Timer (bottom bar, three items). Settings is the gear in the 
   stops that day's remaining repeats. A one-time alarm has no later ring, so it switches off.
 - A snackbar offers **Undo**, and the card shows "Skipping Fri · next Mon". Editing or toggling the alarm clears the skip.
 - The upcoming-alarm notification's Turn off does the same skip, and its Snooze 5 mins delays only that ring.
+- While an alarm is ringing, the banner shows it as "Ringing now" with a **Turn off ringing alarm** button. That ends this
+  ring (like the Turn off swipe) without switching the alarm itself off; a repeating alarm stays on for its next day.
 - The banner fills the top half of the screen and stays put: the cards slide up over it while it zooms out.
 
 ## Ringing: pop-up or pill

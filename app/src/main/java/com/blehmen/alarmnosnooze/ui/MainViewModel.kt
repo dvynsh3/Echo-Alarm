@@ -16,6 +16,7 @@ import com.blehmen.alarmnosnooze.data.Phase
 import com.blehmen.alarmnosnooze.data.StopwatchState
 import com.blehmen.alarmnosnooze.engine.announceAlarmSet
 import com.blehmen.alarmnosnooze.data.TimerState
+import com.blehmen.alarmnosnooze.service.AlarmService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -82,6 +83,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val message = app.engine.skipUpcoming(a.id) ?: return@launch
         skipEvents.emit(SkipEvent(message, before))
     }
+
+    /** Banner button while an alarm is ringing: turns off this ringing instance, not the alarm itself. */
+    fun stopRinging(a: Alarm) = AlarmService.send(app, AlarmService.ACTION_TURN_OFF, a.id)
 
     fun undoSkip(snapshot: Alarm) = viewModelScope.launch { app.engine.restore(snapshot) }
 
