@@ -19,6 +19,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import com.blehmen.alarmnosnooze.RingingActivity
 import com.blehmen.alarmnosnooze.app
@@ -40,7 +41,6 @@ class AlarmService : Service() {
         const val EXTRA_ID = "alarm_id"
         const val EXTRA_KIND = "kind"
         private const val RING_TIMEOUT_MS = 10 * 60_000L
-        private const val BUSY_RECHECK_MS = 2_000L
 
         private val _state = MutableStateFlow<Alarm?>(null)
         /** The alarm currently ringing, or null. Observed by the ring screen and the pop-up. */
@@ -66,7 +66,6 @@ class AlarmService : Service() {
     private var focus: AudioFocusRequest? = null
     private var rampJob: Job? = null
     private var timeoutJob: Job? = null
-    private var busyJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var screenLock: PowerManager.WakeLock? = null
 
@@ -147,7 +146,7 @@ class AlarmService : Service() {
         if (a == null) { foreground(Notifier.placeholder(this)); finishRing(); return }
 
         val mode = chooseMode()
-        if (mode != Mode.BUSY) busy.release()
+        busy.release()
         current = a
         _state.value = a
         // Quiet notification when the pop-up covers the screen. Loud (heads-up pill, lock-screen takeover) otherwise.
@@ -156,7 +155,7 @@ class AlarmService : Service() {
 
         when (mode) {
             Mode.OVERLAY -> if (!showOverlay()) foreground(Notifier.ringing(this, a, loud = true))
-            Mode.BUSY -> watchUntilFree()
+            Mode.BUSY -> {} // stays a pill; tapping it opens the full-screen ring screen
             Mode.LOCKED -> try {
                 startActivity(Intent(this, RingingActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
             } catch (_: Exception) { /* blocked; the full-screen notification handles it */ }
@@ -176,8 +175,12 @@ class AlarmService : Service() {
         val km = getSystemService(KeyguardManager::class.java)
         if (!pm.isInteractive || km.isKeyguardLocked) return Mode.LOCKED
         val s = applicationContext.app.settings.current()
-        if (!s.overlayEnabled || !Settings.canDrawOverlays(this)) return Mode.PILL
-        if (s.pillWhenBusy && busy.reason() != null) return Mode.BUSY
+        val pillPossible = NotificationManagerCompat.from(this).areNotificationsEnabled()
+        if (!s.overlayEnabled || !Settings.canDrawOverlays(this)) {
+            // No pop-up allowed. With notifications blocked there is no pill either, so open the ring screen itself.
+            return if (pillPossible) Mode.PILL else Mode.LOCKED
+        }
+        if (s.pillWhenBusy && pillPossible && busy.reason() != null) return Mode.BUSY
         return Mode.OVERLAY
     }
 
@@ -187,23 +190,8 @@ class AlarmService : Service() {
     }
 
     private fun hideOverlay() {
-        busyJob?.cancel()
         overlay.hide()
         busy.release()
-    }
-
-    /** Pill is showing because the phone was busy. As soon as it is not, the pop-up takes over. */
-    private fun watchUntilFree() {
-        busyJob?.cancel()
-        busyJob = scope.launch {
-            val pm = getSystemService(PowerManager::class.java)
-            val km = getSystemService(KeyguardManager::class.java)
-            while (current != null && !overlay.isShowing) {
-                delay(BUSY_RECHECK_MS)
-                if (!pm.isInteractive || km.isKeyguardLocked) break
-                if (busy.reason() == null) { showOverlay(); break }
-            }
-        }
     }
 
     // ---------------------------------------------------------------- playback

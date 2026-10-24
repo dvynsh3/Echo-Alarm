@@ -34,8 +34,9 @@ Alarms, Stopwatch, Timer (bottom bar, three items). Settings is the gear in the 
 - Pill (small notification with name, time, "rings again" and Turn off or Silence plus Delay) instead of the pop-up when the
   phone looks busy and Settings > Use pill when busy is on, or when the overlay setting is off:
   phone or VoIP call, microphone in use, full-screen app, keyboard open, casting or external display, car mode.
-  While the pill shows it rechecks every 2 seconds and the pop-up takes over once the phone is free.
-- Full-screen app and keyboard detection are best effort and unverified. When the phone gives no answer, it counts as not busy.
+  The pill stays a pill; tap it to open the full-screen ring screen. If notifications are blocked and no pill is
+  possible, the ring screen opens directly.
+- Full-screen app and keyboard detection are best effort and unverified (keyboard detection did not work on a Galaxy S24-class phone). When the phone gives no answer, it counts as not busy.
 - Delay only moves the coming ring; the alarm's time and days stay as they are.
 
 ## Behaviour notes

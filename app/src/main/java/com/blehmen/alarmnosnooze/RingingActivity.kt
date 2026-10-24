@@ -96,7 +96,7 @@ internal fun RingingScreen(accent: Color, onFinish: () -> Unit) {
     val hour = if (is24) now.hour else (now.hour + 11) % 12 + 1
 
     Box(
-        Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF14003A), accent.copy(alpha = 0.55f), Color(0xFF9C7B6B)))),
+        Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF14003A), androidx.compose.ui.graphics.lerp(Color(0xFF14003A), accent, 0.55f), Color(0xFF9C7B6B)))),
     ) {
         Column(
             Modifier.fillMaxSize().systemBarsPadding().padding(24.dp),

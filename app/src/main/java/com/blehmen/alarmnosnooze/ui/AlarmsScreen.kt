@@ -220,12 +220,20 @@ fun AlarmsScreen(
     // Banner takes the top half of the screen and stays put. The list slides up over it while it zooms out.
     val headerHeight = (LocalConfiguration.current.screenHeightDp * 0.5f).dp
     val headerPx = with(density) { headerHeight.toPx() }
+    // 0 while the first card sits half way down, 1 once it has reached the top of the screen. Driven by that card's
+    // position (not a scroll offset) so it keeps going smoothly the whole way.
     val zoom by remember {
         derivedStateOf {
-            if (listState.firstVisibleItemIndex > 0) 1f
-            else (listState.firstVisibleItemScrollOffset / (headerPx * 0.7f)).coerceIn(0f, 1f)
+            val info = listState.layoutInfo
+            if (info.totalItemsCount <= 1) 0f
+            else {
+                val card = info.visibleItemsInfo.firstOrNull { it.index == 1 }
+                if (card == null) 1f else ((headerPx - card.offset) / headerPx).coerceIn(0f, 1f)
+            }
         }
     }
+    // The button lives in a layer in front of the list so it can receive taps. Once the cards get near it, it is gone.
+    val buttonLive by remember { derivedStateOf { zoom < 0.3f } }
     val snackbarHost = remember { SnackbarHostState() }
     LaunchedEffect(skipEvents) {
         skipEvents.collectLatest { e ->
@@ -235,45 +243,19 @@ fun AlarmsScreen(
     }
 
     Box(Modifier.fillMaxSize()) {
+        // Layer behind the list: the banner text. The cards slide up over it while it shrinks to nothing.
         Box(
             Modifier.fillMaxWidth().height(headerHeight).statusBarsPadding().padding(top = 24.dp)
                 .graphicsLayer {
-                    val z = zoom
-                    val scale = 1f - 0.4f * z
-                    scaleX = scale; scaleY = scale; alpha = 1f - z
+                    val scale = (1f - zoom).coerceAtLeast(0.001f)
+                    scaleX = scale; scaleY = scale; alpha = 1f - 0.6f * zoom
                 },
             contentAlignment = Alignment.Center,
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 24.dp)) {
-                AnimatedContent(
-                    targetState = headlineKind,
-                    transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
-                    label = "headline",
-                ) { _ ->
-                    Text(
-                        headline, fontSize = 32.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                }
-                AnimatedVisibility(visible = !editMode && subtitle != null) {
-                    Text(
-                        subtitle ?: "", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 6.dp),
-                    )
-                }
-                AnimatedVisibility(
-                    visible = !editMode && nextAlarm != null,
-                    enter = fadeIn(tween(200)) + expandVertically(tween(200)),
-                    exit = fadeOut(tween(150)) + shrinkVertically(tween(150)),
-                ) {
-                    OutlinedButton(
-                        onClick = { nextAlarm?.let(onSkipUpcoming) },
-                        modifier = Modifier.padding(top = 18.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
-                    ) { Text("Turn off upcoming alarm instance") }
-                }
-            }
+            BannerColumn(
+                headline, headlineKind, subtitle, showSubtitle = !editMode && subtitle != null,
+                showButton = !editMode && nextAlarm != null, textAlpha = { 1f }, buttonAlpha = { 0f }, onSkip = {},
+            )
         }
         Column(Modifier.fillMaxSize()) {
             LazyColumn(
@@ -329,6 +311,25 @@ fun AlarmsScreen(
                         onDelete = { if (confirmDelete) pendingDelete = alarm else onDelete(alarm) },
                     )
                 }
+            }
+        }
+
+        // Layer in front of the list: identical layout, but only the button is visible. The list would swallow taps
+        // on anything behind it.
+        if (!editMode && nextAlarm != null && buttonLive) {
+            Box(
+                Modifier.fillMaxWidth().height(headerHeight).statusBarsPadding().padding(top = 24.dp)
+                    .graphicsLayer {
+                        val scale = (1f - zoom).coerceAtLeast(0.001f)
+                        scaleX = scale; scaleY = scale
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                BannerColumn(
+                    headline, headlineKind, subtitle, showSubtitle = subtitle != null,
+                    showButton = true, textAlpha = { 0f }, buttonAlpha = { (1f - zoom * 4f).coerceIn(0f, 1f) },
+                    onSkip = { onSkipUpcoming(nextAlarm) },
+                )
             }
         }
 
@@ -462,6 +463,52 @@ private fun AlarmCard(
                     }
                 }
             }
+        }
+    }
+}
+
+/** The banner. Drawn twice with identical layout: text behind the list, button in front of it. */
+@Composable
+private fun BannerColumn(
+    headline: String,
+    headlineKind: Int,
+    subtitle: String?,
+    showSubtitle: Boolean,
+    showButton: Boolean,
+    textAlpha: () -> Float,
+    buttonAlpha: () -> Float,
+    onSkip: () -> Unit,
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 24.dp)) {
+        Column(Modifier.graphicsLayer { alpha = textAlpha() }, horizontalAlignment = Alignment.CenterHorizontally) {
+            AnimatedContent(
+                targetState = headlineKind,
+                transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
+                label = "headline",
+            ) { _ ->
+                Text(
+                    headline, fontSize = 32.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+            }
+            AnimatedVisibility(visible = showSubtitle) {
+                Text(
+                    subtitle ?: "", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+        }
+        AnimatedVisibility(
+            visible = showButton,
+            enter = fadeIn(tween(200)) + expandVertically(tween(200)),
+            exit = fadeOut(tween(150)) + shrinkVertically(tween(150)),
+        ) {
+            OutlinedButton(
+                onClick = onSkip,
+                modifier = Modifier.padding(top = 18.dp).graphicsLayer { alpha = buttonAlpha() },
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+            ) { Text("Turn off upcoming alarm instance") }
         }
     }
 }
