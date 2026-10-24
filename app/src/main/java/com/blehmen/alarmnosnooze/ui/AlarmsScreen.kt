@@ -18,7 +18,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -40,6 +40,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import kotlin.math.roundToInt
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -229,12 +233,23 @@ fun AlarmsScreen(
             else {
                 val card = info.visibleItemsInfo.firstOrNull { it.index == 1 }
                 // item offsets do not include the list's top padding
-                if (card == null) 1f else ((headerPx - (card.offset + info.beforeContentPadding)) / headerPx).coerceIn(0f, 1f)
+                if (card == null) 1f else ((headerPx - (card.offset + info.beforeContentPadding)) / (headerPx * 0.45f)).coerceIn(0f, 1f)
             }
         }
     }
     // The button lives in a layer in front of the list so it can receive taps. Once the cards get near it, it is gone.
     val buttonLive by remember { derivedStateOf { zoom < 0.3f } }
+    // Where the + / Edit row sits on screen: just above the first card, rising with the list.
+    val statusTopPx = WindowInsets.statusBars.getTop(density)
+    val rowPx = with(density) { 48.dp.toPx() }
+    val actionsTop by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val slot = info.visibleItemsInfo.firstOrNull { it.key == "actions" }
+            if (slot == null) -rowPx else (slot.offset + info.beforeContentPadding).toFloat()
+        }
+    }
+    val barColor = MaterialTheme.colorScheme.background
     val snackbarHost = remember { SnackbarHostState() }
     LaunchedEffect(skipEvents) {
         skipEvents.collectLatest { e ->
@@ -249,7 +264,7 @@ fun AlarmsScreen(
             Modifier.fillMaxWidth().height(headerHeight).statusBarsPadding().padding(top = 24.dp)
                 .graphicsLayer {
                     val scale = (1f - zoom).coerceAtLeast(0.001f)
-                    scaleX = scale; scaleY = scale; alpha = 1f - 0.6f * zoom
+                    scaleX = scale; scaleY = scale; alpha = 1f - zoom
                 },
             contentAlignment = Alignment.Center,
         ) {
@@ -266,26 +281,8 @@ fun AlarmsScreen(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = headerHeight - 56.dp, bottom = 180.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item(key = "actions") {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onAdd) {
-                            Icon(Icons.Filled.Add, "Add alarm", tint = MaterialTheme.colorScheme.onBackground)
-                        }
-                        IconButton(onClick = { editMode = !editMode }) {
-                            AnimatedContent(
-                                targetState = editMode,
-                                transitionSpec = { (fadeIn(tween(180)) + scaleIn(initialScale = 0.6f)) togetherWith fadeOut(tween(120)) },
-                                label = "editIcon",
-                            ) { e ->
-                                Icon(
-                                    if (e) Icons.Filled.Check else Icons.Outlined.Edit,
-                                    if (e) "Done editing" else "Edit alarms",
-                                    tint = MaterialTheme.colorScheme.onBackground,
-                                )
-                            }
-                        }
-                    }
-                }
+                // Empty slot that keeps the spacing; the real + / Edit buttons are drawn in front (see below).
+                item(key = "actions") { Spacer(Modifier.height(48.dp)) }
                 itemsIndexed(list, key = { _, a -> a.id }) { _, alarm ->
                     val dragging = draggingId == alarm.id
                     val itemMod = if (dragging) Modifier.zIndex(1f).graphicsLayer {
@@ -295,8 +292,12 @@ fun AlarmsScreen(
                         alarm = alarm, is24 = is24, now = now, editMode = editMode, dragging = dragging,
                         modifier = itemMod,
                         handleModifier = Modifier.pointerInput(alarm.id) {
-                            detectDragGestures(
-                                onDragStart = { dragList = currentList; draggingId = alarm.id; dragOffset = 0f },
+                            // press and hold anywhere on the card, then drag (a plain swipe still scrolls the list)
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    dragList = currentList; draggingId = alarm.id; dragOffset = 0f
+                                },
                                 onDragEnd = { endDrag() },
                                 onDragCancel = { endDrag() },
                                 onDrag = { change, amount -> change.consume(); dragBy(amount.y) },
@@ -334,6 +335,44 @@ fun AlarmsScreen(
             }
         }
 
+        // + and Edit rise with the list, then dock in the top bar to the left of the gear: +, Edit, gear.
+        // dock: 0 while they sit above the first card, 1 once they have reached the top bar.
+        Row(
+            Modifier
+                .align(Alignment.TopEnd)
+                .padding(end = 16.dp)
+                .offset {
+                    val dock = ((statusTopPx + rowPx - actionsTop) / rowPx).coerceIn(0f, 1f)
+                    IntOffset(
+                        (-40.dp.toPx() * dock).roundToInt(), // clear of the gear
+                        maxOf(actionsTop, statusTopPx.toFloat()).roundToInt(),
+                    )
+                }
+                .drawBehind {
+                    val dock = ((statusTopPx + rowPx - actionsTop) / rowPx).coerceIn(0f, 1f)
+                    // a soft backing so the icons stay readable over cards that slide underneath
+                    drawRoundRect(barColor.copy(alpha = 0.9f * dock), cornerRadius = CornerRadius(size.height / 2))
+                },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onAdd) {
+                Icon(Icons.Filled.Add, "Add alarm", tint = MaterialTheme.colorScheme.onBackground)
+            }
+            IconButton(onClick = { editMode = !editMode }) {
+                AnimatedContent(
+                    targetState = editMode,
+                    transitionSpec = { (fadeIn(tween(180)) + scaleIn(initialScale = 0.6f)) togetherWith fadeOut(tween(120)) },
+                    label = "editIcon",
+                ) { e ->
+                    Icon(
+                        if (e) Icons.Filled.Check else Icons.Outlined.Edit,
+                        if (e) "Done editing" else "Edit alarms",
+                        tint = MaterialTheme.colorScheme.onBackground,
+                    )
+                }
+            }
+        }
+
         IconButton(
             onClick = onSettings,
             modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(horizontal = 8.dp),
@@ -341,7 +380,7 @@ fun AlarmsScreen(
 
         SnackbarHost(
             hostState = snackbarHost,
-            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 16.dp, end = 16.dp, bottom = 100.dp),
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 16.dp, end = 16.dp, bottom = 172.dp),
         )
 
         AnimatedVisibility(
@@ -395,12 +434,13 @@ private fun AlarmCard(
             add("Rings again ${DateFormat.getTimeFormat(ctx).format(Date(alarm.nextAgainAt))}")
     }
     val dim by animateFloatAsState(if (alarm.enabled) 1f else 0.5f, tween(250), label = "dim")
-    val timeSize by animateFloatAsState(if (editMode) 38f else 44f, tween(200), label = "timeSize")
     val elevation by animateDpAsState(if (dragging) 14.dp else 0.dp, label = "lift")
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
 
     Surface(
-        modifier = modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        modifier = modifier.fillMaxWidth()
+            .then(if (editMode) handleModifier else Modifier)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         shape = RoundedCornerShape(28.dp),
         color = MaterialTheme.colorScheme.surface,
         shadowElevation = elevation,
@@ -426,7 +466,7 @@ private fun AlarmCard(
                         if (alarm.label.isNotBlank()) Text(alarm.label, fontSize = 14.sp, color = muted)
                     }
                     Row(verticalAlignment = Alignment.Bottom) {
-                        Text(time, fontSize = timeSize.sp, fontWeight = FontWeight.Normal)
+                        Text(time, fontSize = 44.sp, fontWeight = FontWeight.Normal)
                         if (ampm.isNotEmpty())
                             Text(ampm, fontSize = 18.sp, modifier = Modifier.padding(start = 6.dp, bottom = 8.dp))
                     }
@@ -454,9 +494,6 @@ private fun AlarmCard(
                             }
                             IconButton(onClick = onDelete, modifier = Modifier.size(34.dp)) {
                                 Icon(Icons.Outlined.Delete, "Delete", modifier = Modifier.size(22.dp), tint = muted)
-                            }
-                            Box(handleModifier.size(34.dp), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Filled.UnfoldMore, "Drag to reorder", modifier = Modifier.size(22.dp), tint = muted)
                             }
                         }
                     } else {

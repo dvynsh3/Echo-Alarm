@@ -65,6 +65,14 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
 class RingingActivity : ComponentActivity() {
+    companion object {
+        /** True while the ring screen is in front. The service uses this to tell whether launching it worked. */
+        @Volatile var visible = false
+    }
+
+    override fun onResume() { super.onResume(); visible = true }
+    override fun onPause() { visible = false; super.onPause() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setShowWhenLocked(true)

@@ -67,7 +67,7 @@ class BusyDetector(private val ctx: Context) {
 
     private suspend fun addProbe() {
         if (!Settings.canDrawOverlays(ctx)) return
-        val v = View(ctx)
+        val v = View(ctx).apply { setBackgroundColor(0x01000000) } // nearly invisible, but a real drawn window
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT, 1,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -78,6 +78,9 @@ class BusyDetector(private val ctx: Context) {
         try { wm.addView(v, lp); probe = v } catch (_: Exception) { return }
         delay(150) // let the first insets arrive
     }
+
+    /** Makes sure the 1-pixel overlay window exists. While it does, Android lets this app open its ring screen. */
+    suspend fun holdProbe() { if (probe == null) addProbe() }
 
     fun release() {
         probe?.let { try { wm.removeViewImmediate(it) } catch (_: Exception) {} }

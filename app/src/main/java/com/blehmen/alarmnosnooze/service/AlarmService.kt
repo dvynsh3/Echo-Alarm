@@ -146,7 +146,7 @@ class AlarmService : Service() {
         if (a == null) { foreground(Notifier.placeholder(this)); finishRing(); return }
 
         val mode = chooseMode()
-        busy.release()
+        if (mode != Mode.OVERLAY) busy.release()
         current = a
         _state.value = a
         // Quiet notification when the pop-up covers the screen. Loud (heads-up pill, lock-screen takeover) otherwise.
@@ -154,7 +154,10 @@ class AlarmService : Service() {
         startPlayback(a)
 
         when (mode) {
-            Mode.OVERLAY -> if (!showOverlay()) foreground(Notifier.ringing(this, a, loud = true))
+            Mode.OVERLAY -> {
+                if (!showPopup()) foreground(Notifier.ringing(this, a, loud = true))
+                busy.release()
+            }
             Mode.BUSY -> {} // stays a pill; tapping it opens the full-screen ring screen
             Mode.LOCKED -> try {
                 startActivity(Intent(this, RingingActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
@@ -182,6 +185,23 @@ class AlarmService : Service() {
         }
         if (s.pillWhenBusy && pillPossible && busy.reason() != null) return Mode.BUSY
         return Mode.OVERLAY
+    }
+
+    /**
+     * The pop-up. First choice is the real ring screen (an activity), so Home and Back work like in any app and the
+     * alarm keeps ringing. Android only allows that from the background while this app has a visible overlay window,
+     * so a tiny one is held open for the moment. If the screen does not come up, draw it as an overlay window instead.
+     */
+    private suspend fun showPopup(): Boolean {
+        busy.holdProbe()
+        try {
+            startActivity(Intent(this, RingingActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
+        } catch (_: Exception) {}
+        repeat(8) {
+            if (RingingActivity.visible) return true
+            delay(100)
+        }
+        return showOverlay()
     }
 
     private suspend fun showOverlay(): Boolean {

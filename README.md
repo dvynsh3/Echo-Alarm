@@ -12,7 +12,7 @@ Alarms, Stopwatch, Timer (bottom bar, three items). Settings is the gear in the 
 - **Edit mode** (pencil, or press and hold any alarm): each card shows Pin, Delete and a reorder handle.
   The system Back gesture (or the tick) leaves edit mode. Reordering is saved the moment you drop a card.
   Pinned alarms stay above unpinned ones; use Pin to move an alarm between the two groups.
-- Edit mode buttons per card: Pin, Duplicate, Delete, Reorder. Duplicate keeps every setting and renames the copy
+- Edit mode buttons per card: Pin, Duplicate, Delete. Press and hold anywhere on a card, then drag, to reorder. Duplicate keeps every setting and renames the copy
   "Name (2)", then "Name (3)" and so on, placing it right after the original.
 - Settings > Warning before deletion (off by default) asks for confirmation before any trash button deletes an alarm.
 - An accent edge on the left of a card, full height and curving with the card corners, means that alarm is on.
@@ -28,8 +28,11 @@ Alarms, Stopwatch, Timer (bottom bar, three items). Settings is the gear in the 
 - The banner fills the top half of the screen and stays put: the cards slide up over it while it zooms out.
 
 ## Ringing: pop-up or pill
-- Screen on and unlocked: a full-screen pop-up (swipe to turn off or silence, plus Delay 5 mins or the alarm's own Snooze).
-  It is an overlay window, so Settings > Display over other apps must be on (asked the first time the app opens).
+- Screen on and unlocked: the full-screen ring screen (swipe to turn off or silence, plus Delay 5 mins or the alarm's own Snooze).
+  It opens as a normal screen, so Home and Back leave it and the alarm keeps ringing; turn it off from the notification or
+  the app. Android only allows that from the background while the app has an overlay window, so Settings > Display over
+  other apps must be on (asked the first time the app opens). If the screen cannot open, the same screen is drawn as an
+  overlay window instead, where Back and Home also hide it without stopping the alarm.
 - Screen off or locked: the full-screen notification, as before.
 - Pill (small notification with name, time, "rings again" and Turn off or Silence plus Delay) instead of the pop-up when the
   phone looks busy and Settings > Use pill when busy is on, or when the overlay setting is off:
