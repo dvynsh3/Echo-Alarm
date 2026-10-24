@@ -163,8 +163,8 @@ fun AlarmsScreen(
         val bottom = top + cur.size
         val viewport = listState.layoutInfo
         val scroll = when {
-            bottom > viewport.viewportSize.height - edgePx -> 28f
-            top < edgePx -> -28f
+            bottom + viewport.beforeContentPadding > viewport.viewportSize.height - edgePx -> 28f
+            top + viewport.beforeContentPadding < edgePx -> -28f
             else -> 0f
         }
         if (scroll != 0f) dragOffset += listState.dispatchRawDelta(scroll)
@@ -228,7 +228,8 @@ fun AlarmsScreen(
             if (info.totalItemsCount <= 1) 0f
             else {
                 val card = info.visibleItemsInfo.firstOrNull { it.index == 1 }
-                if (card == null) 1f else ((headerPx - card.offset) / headerPx).coerceIn(0f, 1f)
+                // item offsets do not include the list's top padding
+                if (card == null) 1f else ((headerPx - (card.offset + info.beforeContentPadding)) / headerPx).coerceIn(0f, 1f)
             }
         }
     }
