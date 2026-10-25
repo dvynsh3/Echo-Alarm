@@ -12,6 +12,8 @@ Alarms, Stopwatch, Timer (bottom bar, three items). Settings is the gear in the 
 - **Edit mode** (pencil, or press and hold any alarm): each card shows Pin, Delete and a reorder handle.
   The system Back gesture (or the tick) leaves edit mode. Reordering is saved the moment you drop a card.
   Pinned alarms stay above unpinned ones; use Pin to move an alarm between the two groups.
+- Top corner: the gear sits alone in a grey circle. As you scroll, a dock opens to its left and Edit, then +, slide in.
+  Above the first card the same + and Edit buttons are shown until they fade into the dock.
 - Edit mode buttons per card: Pin, Duplicate, Delete. Press and hold anywhere on a card, then drag, to reorder. Duplicate keeps every setting and renames the copy
   "Name (2)", then "Name (3)" and so on, placing it right after the original.
 - Settings > Warning before deletion (off by default) asks for confirmation before any trash button deletes an alarm.

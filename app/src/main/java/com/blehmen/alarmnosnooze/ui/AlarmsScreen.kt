@@ -40,6 +40,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.draw.clipToBounds
 import kotlin.math.roundToInt
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.geometry.CornerRadius
@@ -261,6 +263,10 @@ fun AlarmsScreen(
             if (slot == null) -rowPx else (slot.offset + info.beforeContentPadding).toFloat()
         }
     }
+    // 0 = dock closed (just the gear). 1 = fully open. Starts when the in-list + / Edit row is three rows below the
+    // top and finishes as it reaches the top.
+    val dock by remember { derivedStateOf { ((statusTopPx + 3 * rowPx - actionsTop) / (3 * rowPx)).coerceIn(0f, 1f) } }
+    val inListVisible by remember { derivedStateOf { dock < 0.5f } }
     val barColor = MaterialTheme.colorScheme.background
     val snackbarHost = remember { SnackbarHostState() }
     LaunchedEffect(skipEvents) {
@@ -349,48 +355,32 @@ fun AlarmsScreen(
             }
         }
 
-        // + and Edit rise with the list, then dock in the top bar to the left of the gear: +, Edit, gear.
-        // dock: 0 while they sit above the first card, 1 once they have reached the top bar.
-        Row(
-            Modifier
-                .align(Alignment.TopEnd)
-                .padding(end = 16.dp)
-                .offset {
-                    val dock = ((statusTopPx + rowPx - actionsTop) / rowPx).coerceIn(0f, 1f)
-                    IntOffset(
-                        (-40.dp.toPx() * dock).roundToInt(), // clear of the gear
-                        maxOf(actionsTop, statusTopPx.toFloat()).roundToInt(),
-                    )
+        // + and Edit sit above the first card and ride up with the list. As they near the top they fade out while the
+        // dock in the corner opens and the same two buttons slide into it.
+        if (inListVisible) {
+            Row(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = 16.dp)
+                    .offset { IntOffset(0, actionsTop.roundToInt()) }
+                    .graphicsLayer { alpha = (1f - dock * 2f).coerceIn(0f, 1f) },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onAdd) {
+                    Icon(Icons.Filled.Add, "Add alarm", tint = MaterialTheme.colorScheme.onBackground)
                 }
-                .drawBehind {
-                    val dock = ((statusTopPx + rowPx - actionsTop) / rowPx).coerceIn(0f, 1f)
-                    // a soft backing so the icons stay readable over cards that slide underneath
-                    drawRoundRect(barColor.copy(alpha = 0.9f * dock), cornerRadius = CornerRadius(size.height / 2))
-                },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onAdd) {
-                Icon(Icons.Filled.Add, "Add alarm", tint = MaterialTheme.colorScheme.onBackground)
-            }
-            IconButton(onClick = { editMode = !editMode }) {
-                AnimatedContent(
-                    targetState = editMode,
-                    transitionSpec = { (fadeIn(tween(180)) + scaleIn(initialScale = 0.6f)) togetherWith fadeOut(tween(120)) },
-                    label = "editIcon",
-                ) { e ->
-                    Icon(
-                        if (e) Icons.Filled.Check else Icons.Outlined.Edit,
-                        if (e) "Done editing" else "Edit alarms",
-                        tint = MaterialTheme.colorScheme.onBackground,
-                    )
-                }
+                IconButton(onClick = { editMode = !editMode }) { EditIcon(editMode) }
             }
         }
 
-        IconButton(
-            onClick = onSettings,
-            modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(horizontal = 8.dp),
-        ) { Icon(Icons.Outlined.Settings, "Settings") }
+        TopDock(
+            progress = { dock },
+            editMode = editMode,
+            onAdd = onAdd,
+            onEdit = { editMode = !editMode },
+            onSettings = onSettings,
+            modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(end = 8.dp, top = 4.dp),
+        )
 
         SnackbarHost(
             hostState = snackbarHost,
@@ -567,3 +557,63 @@ private fun BannerColumn(
         }
     }
 }
+
+@Composable
+private fun EditIcon(editMode: Boolean) {
+    AnimatedContent(
+        targetState = editMode,
+        transitionSpec = { (fadeIn(tween(180)) + scaleIn(initialScale = 0.6f)) togetherWith fadeOut(tween(120)) },
+        label = "editIcon",
+    ) { e ->
+        Icon(
+            if (e) Icons.Filled.Check else Icons.Outlined.Edit,
+            if (e) "Done editing" else "Edit alarms",
+            tint = MaterialTheme.colorScheme.onBackground,
+        )
+    }
+}
+
+/**
+ * Same idea as the bottom dock. Closed, it is only the gear in a grey circle. As the list scrolls the dock opens to the
+ * left and Edit slides in, then +, with the gear staying as the highlighted (grey) item: [ + ][ Edit ][ gear ].
+ */
+@Composable
+private fun TopDock(
+    progress: () -> Float,
+    editMode: Boolean,
+    onAdd: () -> Unit,
+    onEdit: () -> Unit,
+    onSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val p = progress()
+    val editT = ((p - 0.15f) / 0.4f).coerceIn(0f, 1f)   // Edit first...
+    val plusT = ((p - 0.5f) / 0.4f).coerceIn(0f, 1f)    // ...then +
+    Row(
+        modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape).padding(4.dp * p),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.reveal(plusT)) {
+            IconButton(onClick = onAdd) { Icon(Icons.Filled.Add, "Add alarm", tint = MaterialTheme.colorScheme.onBackground) }
+        }
+        Box(Modifier.reveal(editT)) {
+            IconButton(onClick = onEdit) { EditIcon(editMode) }
+        }
+        Box(
+            Modifier.size(48.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            contentAlignment = Alignment.Center,
+        ) {
+            IconButton(onClick = onSettings, modifier = Modifier.fillMaxSize()) { Icon(Icons.Outlined.Settings, "Settings") }
+        }
+    }
+}
+
+/** Grows from nothing to full width and slides in from the right, behind its neighbour. */
+private fun Modifier.reveal(t: Float): Modifier = this
+    .clipToBounds()
+    .layout { measurable, constraints ->
+        val placeable = measurable.measure(constraints)
+        val w = (placeable.width * t).roundToInt()
+        layout(w, placeable.height) { placeable.placeRelative(w - placeable.width, 0) }
+    }
+    .graphicsLayer { alpha = t }
