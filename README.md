@@ -25,7 +25,8 @@ Alarms, Stopwatch, Timer (bottom bar, three items). Settings is the gear in the 
   and a **Turn off upcoming alarm instance** button. It behaves as if you toggled the alarm off for that ring only:
   a weekday alarm skips to its next day, with its time, days and settings untouched. During a snooze/repeat session it
   stops that day's remaining repeats. A one-time alarm has no later ring, so it switches off.
-- A snackbar offers **Undo**, and the card shows "Skipping Fri · next Mon". Editing or toggling the alarm clears the skip.
+- An **Undo** icon button appears to the right of the banner button (a full "Undo" button when every alarm is off). It stays
+  while this screen is in front and disappears when you open an alarm, change tab or leave the app. The card shows "Skipping Fri · next Mon". Editing or toggling the alarm clears the skip.
 - The upcoming-alarm notification's Turn off does the same skip, and its Snooze 5 mins delays only that ring.
 - While an alarm is ringing, the banner shows it as "Ringing now" with a **Turn off ringing alarm** button. That ends this
   ring (like the Turn off swipe) without switching the alarm itself off; a repeating alarm stays on for its next day.

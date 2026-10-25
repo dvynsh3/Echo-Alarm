@@ -83,9 +83,9 @@ object Notifier {
         val (t, ap) = timeParts(a.hour, a.minute, DateFormat.is24HourFormat(ctx))
         val time = if (ap.isEmpty()) t else "$t $ap"
         val detail = when {
-            a.autoRepeatEnabled -> "Ringing now. Rings again in ${a.autoRepeatMinutes} min after Silence."
-            a.snoozeEnabled -> "Ringing now. Snooze rings again in ${a.snoozeMinutes} min."
-            else -> "Ringing now. Delay rings again in 5 min."
+            a.autoRepeatEnabled -> "Rings again in ${a.autoRepeatMinutes} min after Silence."
+            a.snoozeEnabled -> "Snooze rings again in ${a.snoozeMinutes} min."
+            else -> "Delay rings again in 5 min."
         }
         val b = Notification.Builder(ctx, if (loud) CH_RING else CH_RING_QUIET)
             .setSmallIcon(R.drawable.ic_notif)

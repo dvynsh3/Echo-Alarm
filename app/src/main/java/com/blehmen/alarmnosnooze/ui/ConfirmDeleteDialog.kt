@@ -24,7 +24,7 @@ fun ConfirmDeleteDialog(onCancel: () -> Unit, onConfirm: () -> Unit) {
             shadowElevation = 6.dp,
         ) {
             Box {
-                AccentEdge(MaterialTheme.colorScheme.surface, Modifier.matchParentSize())
+                AccentEdge(Modifier.matchParentSize())
                 Column(Modifier.padding(start = 28.dp, end = 22.dp, top = 24.dp, bottom = 20.dp)) {
                     Text("Delete alarm?", fontSize = 24.sp, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(10.dp))

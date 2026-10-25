@@ -13,6 +13,10 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -197,6 +201,9 @@ fun AlarmsScreen(
     }
 
     // ---- UI ----------------------------------------------------------------------------
+    // What the Undo button would put back. Lives only while this screen is in front.
+    var undo by remember { mutableStateOf<SkipEvent?>(null) }
+
     // The alarm that is ringing right now, if any. It takes over the banner.
     val ringingAlarm by AlarmService.state.collectAsState()
     val ringing = ringingAlarm
@@ -221,6 +228,11 @@ fun AlarmsScreen(
     val headlineKind = when { ringing != null -> 3; editMode -> 0; nextMs == null -> 1; else -> 2 }
     val bannerButton = ringing != null || (!editMode && nextAlarm != null)
     val buttonLabel = if (ringing != null) "Turn off ringing alarm" else "Turn off upcoming alarm instance"
+    // Undo sits to the right of the main button. With no alarms left to show a main button for, it becomes a full
+    // button in the same style.
+    val undoIcon = bannerButton && undo != null
+    val undoFull = !bannerButton && undo != null
+    val buttonArea = bannerButton || undoFull
     val subtitle = if (ringing != null) {
         val (tm, ap) = timeParts(ringing.hour, ringing.minute, is24)
         "${ringing.label.ifBlank { "Alarm" }} · ${if (ap.isEmpty()) tm else "$tm $ap"}"
@@ -268,12 +280,13 @@ fun AlarmsScreen(
     val dock by remember { derivedStateOf { ((statusTopPx + 3 * rowPx - actionsTop) / (3 * rowPx)).coerceIn(0f, 1f) } }
     val inListVisible by remember { derivedStateOf { dock < 0.5f } }
     val barColor = MaterialTheme.colorScheme.background
-    val snackbarHost = remember { SnackbarHostState() }
-    LaunchedEffect(skipEvents) {
-        skipEvents.collectLatest { e ->
-            val r = snackbarHost.showSnackbar(e.message, actionLabel = "Undo", withDismissAction = true, duration = SnackbarDuration.Long)
-            if (r == SnackbarResult.ActionPerformed) onUndoSkip(e.snapshot)
-        }
+    LaunchedEffect(skipEvents) { skipEvents.collect { undo = it } }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        // Leaving the app clears it; opening an alarm or another tab removes this screen, which clears it too.
+        val observer = LifecycleEventObserver { _, e -> if (e == Lifecycle.Event.ON_STOP) undo = null }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -288,7 +301,7 @@ fun AlarmsScreen(
         ) {
             BannerColumn(
                 headline, headlineKind, subtitle, showSubtitle = (ringing != null || !editMode) && subtitle != null,
-                showButton = bannerButton, textAlpha = { 1f }, buttonAlpha = { 0f }, onSkip = {}, buttonLabel = buttonLabel,
+                showButton = buttonArea, textAlpha = { 1f }, buttonAlpha = { 0f }, onSkip = {}, buttonLabel = buttonLabel,
             )
         }
         Column(Modifier.fillMaxSize()) {
@@ -337,7 +350,7 @@ fun AlarmsScreen(
 
         // Layer in front of the list: identical layout, but only the button is visible. The list would swallow taps
         // on anything behind it.
-        if (bannerButton && buttonLive) {
+        if (buttonArea && buttonLive) {
             Box(
                 Modifier.fillMaxWidth().height(headerHeight).statusBarsPadding().padding(top = 24.dp)
                     .graphicsLayer {
@@ -351,6 +364,8 @@ fun AlarmsScreen(
                     showButton = true, textAlpha = { 0f }, buttonAlpha = { (1f - zoom * 4f).coerceIn(0f, 1f) },
                     onSkip = { if (ringing != null) onStopRinging(ringing) else nextAlarm?.let(onSkipUpcoming) },
                     buttonLabel = buttonLabel,
+                    undoOnly = undoFull, undoIcon = undoIcon,
+                    onUndo = { undo?.let { onUndoSkip(it.snapshot); undo = null } },
                 )
             }
         }
@@ -380,11 +395,6 @@ fun AlarmsScreen(
             onEdit = { editMode = !editMode },
             onSettings = onSettings,
             modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(end = 8.dp, top = 4.dp),
-        )
-
-        SnackbarHost(
-            hostState = snackbarHost,
-            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 16.dp, end = 16.dp, bottom = 172.dp),
         )
 
         AnimatedVisibility(
@@ -458,7 +468,7 @@ private fun AlarmCard(
                 modifier = Modifier.matchParentSize(),
                 enter = fadeIn(tween(250)),
                 exit = fadeOut(tween(200)),
-            ) { AccentEdge(MaterialTheme.colorScheme.surface, Modifier.fillMaxSize()) }
+            ) { AccentEdge(Modifier.fillMaxSize()) }
             Row(
                 Modifier.padding(start = 24.dp, end = 14.dp, top = 18.dp, bottom = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -511,7 +521,7 @@ private fun AlarmCard(
     }
 }
 
-/** The banner. Drawn twice with identical layout: text behind the list, button in front of it. */
+/** The banner. Drawn twice with identical layout: text behind the list, buttons in front of it. */
 @Composable
 private fun BannerColumn(
     headline: String,
@@ -523,9 +533,15 @@ private fun BannerColumn(
     buttonAlpha: () -> Float,
     onSkip: () -> Unit,
     buttonLabel: String,
+    undoOnly: Boolean = false,
+    undoIcon: Boolean = false,
+    onUndo: () -> Unit = {},
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 24.dp)) {
-        Column(Modifier.graphicsLayer { alpha = textAlpha() }, horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.padding(horizontal = 24.dp).graphicsLayer { alpha = textAlpha() },
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             AnimatedContent(
                 targetState = headlineKind,
                 transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
@@ -548,12 +564,28 @@ private fun BannerColumn(
             enter = fadeIn(tween(200)) + expandVertically(tween(200)),
             exit = fadeOut(tween(150)) + shrinkVertically(tween(150)),
         ) {
-            OutlinedButton(
-                onClick = onSkip,
-                modifier = Modifier.padding(top = 18.dp).graphicsLayer { alpha = buttonAlpha() },
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
-            ) { Text(buttonLabel) }
+            Box(Modifier.fillMaxWidth().padding(top = 18.dp).graphicsLayer { alpha = buttonAlpha() }) {
+                // The main button stays centred. Undo never moves it.
+                OutlinedButton(
+                    onClick = if (undoOnly) onUndo else onSkip,
+                    modifier = Modifier.align(Alignment.Center),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+                ) {
+                    if (undoOnly) {
+                        Icon(Icons.AutoMirrored.Filled.Undo, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Undo")
+                    } else Text(buttonLabel)
+                }
+                if (undoIcon) {
+                    OutlinedIconButton(
+                        onClick = onUndo,
+                        modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp).size(40.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                    ) { Icon(Icons.AutoMirrored.Filled.Undo, "Undo", tint = MaterialTheme.colorScheme.primary) }
+                }
+            }
         }
     }
 }
