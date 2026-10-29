@@ -145,6 +145,10 @@ class AlarmService : Service() {
         val a = engine.onFire(id, kind)
         if (a == null) { foreground(Notifier.placeholder(this)); finishRing(); return }
 
+        // A ring between midnight and 6 am is "the first alarm in the morning": clear the bedtime reminder.
+        // (It also removes itself at 6 am; an alarm the evening before, like 11 pm, leaves it alone.)
+        if (java.time.LocalTime.now().hour < 6) Notifier.cancelBedtime(this)
+
         val mode = chooseMode()
         if (mode != Mode.OVERLAY) busy.release()
         current = a

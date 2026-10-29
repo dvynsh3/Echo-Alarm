@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Alarm - No Snooze</string>
+    <string name="app_name">Echo</string>
     <string name="widget_alarm_desc">Next alarm, alarm list and add alarm</string>
     <string name="widget_timer_desc">Start and control the timer</string>
     <string name="widget_stopwatch_desc">Start, lap and reset the stopwatch</string>

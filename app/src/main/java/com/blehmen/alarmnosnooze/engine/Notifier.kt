@@ -169,11 +169,17 @@ object Notifier {
         ctx.getSystemService(NotificationManager::class.java).cancel(50000 + id)
     }
 
+    /** Called when an alarm rings in the morning: the 10:30 pm reminder has done its job. */
+    fun cancelBedtime(ctx: Context) {
+        ctx.getSystemService(NotificationManager::class.java).cancel(60001)
+    }
+
     fun bedtime(ctx: Context, heading: String, expanded: String?) {
         val b = Notification.Builder(ctx, CH_BEDTIME)
             .setSmallIcon(R.drawable.ic_notif)
             .setContentTitle(heading)
             .setSubText("Tomorrow morning")
+            .setTimeoutAfter(nextOccurrence(6, 0, 0).toInstant().toEpochMilli() - System.currentTimeMillis())
             .setCategory(Notification.CATEGORY_REMINDER)
             .setAutoCancel(true)
             .setContentIntent(openApp(ctx))

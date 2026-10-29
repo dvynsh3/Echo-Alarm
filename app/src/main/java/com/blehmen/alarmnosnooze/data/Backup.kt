@@ -57,7 +57,7 @@ object Backup {
     /** Parses the whole file first, so a bad file changes nothing. */
     suspend fun restore(app: AlarmApp, text: String): RestoreResult {
         val root = JSONObject(text)
-        require(root.optString("format") == FORMAT) { "not an Alarm - No Snooze backup" }
+        require(root.optString("format") == FORMAT) { "not an Echo backup" }
         require(root.optInt("version", 0) in 1..VERSION) { "backup is from a newer app version" }
 
         val alarms = root.optJSONArray("alarms")?.let { arr ->

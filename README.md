@@ -1,4 +1,4 @@
-# Alarm - No Snooze (`com.blehmen.alarmnosnooze`)
+# Echo (`com.blehmen.alarmnosnooze`)
 
 Kotlin, Jetpack Compose (Material 3), Room, DataStore, Glance.
 Open this folder in Android Studio (Ladybug or newer), let Gradle sync, run on a device.
@@ -68,6 +68,8 @@ Settings > Reliability checklist has the same shortcut.
 - Bedtime reminder, every night at 10:30 pm: "No alarm for tomorrow morning" if nothing rings between 4:00 and 11:00 am
   tomorrow, otherwise the earliest alarm's name and time as the heading, with "<name> rings tomorrow morning at <time>"
   when expanded. Switch it off in Settings.
+  The reminder removes itself at 6 am, or earlier if an alarm rings between midnight and 6 am. An alarm the evening
+  before (say 11 pm) does not clear it.
 - Upcoming alarm notice, 15 minutes before every enabled alarm (any snooze/repeat mode): name and time as the heading,
   a live countdown clock, and "<name> rings in N mins" when expanded (refreshed each minute, best effort in Doze).
   It has Turn off (switches the alarm off) and Snooze 5 mins (moves the alarm itself 5 minutes later and refreshes the
