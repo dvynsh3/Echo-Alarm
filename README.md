@@ -1,6 +1,6 @@
 # Echo
 
-An Android alarm clock that does what you tell it to: **no surprise snoozes, no alarms quietly killed by the system, and no way to half-wake yourself back to sleep.** Echo started life as *Alarm - No Snooze* and keeps that spirit. Snooze and auto-repeat are choices you make per alarm, and an auto-repeating alarm can only be ended deliberately.
+An Android alarm clock where you can automate snoozes to leave no way to half-wake yourself back to sleep. Echo started life as Alarm - No Snooze and keeps that spirit. Snooze and auto-repeat are choices you make per alarm, and an auto-repeating alarm can only be ended deliberately by openeing the app itself..
 
 Built with Kotlin, Jetpack Compose (Material 3), Room, DataStore and Glance. Package name: `com.blehmen.alarmnosnooze`.
 
